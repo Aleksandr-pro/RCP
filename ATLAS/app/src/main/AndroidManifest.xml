@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:hasCode="false"
+        android:label="ATLAS 0.1"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:exported="true">
+
+            <!-- Имя библиотеки без префикса lib и расширения .so -->
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="atlas" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+    </application>
+
+</manifest>
