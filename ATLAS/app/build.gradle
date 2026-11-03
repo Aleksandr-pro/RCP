@@ -37,6 +37,14 @@ android {
     }
 
     signingConfigs {
+        // Public test key: stable updates for test APKs, not for production releases.
+        debug {
+            storeFile file("keys/atlas-test.p12")
+            storeType "PKCS12"
+            storePassword "android"
+            keyAlias "atlas-test"
+            keyPassword "android"
+        }
         release {
             if (System.getenv("ATLAS_KEYSTORE_PATH")) {
                 storeFile file(System.getenv("ATLAS_KEYSTORE_PATH"))

@@ -28,4 +28,9 @@ grep -q 'Приложение приостановлено' atlas-log.txt
 adb shell screencap -p /sdcard/atlas.png
 adb pull /sdcard/atlas.png atlas-screen.png
 python3 .github/scripts/check-screen.py atlas-screen.png
+# Verify that a subsequent APK signed with the same test key installs as an update.
+adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n "$package/android.app.NativeActivity"
+sleep 3
+[ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb shell am force-stop "$package"
