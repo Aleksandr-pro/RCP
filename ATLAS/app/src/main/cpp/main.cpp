@@ -1,11 +1,7 @@
-#define VK_USE_PLATFORM_ANDROID_KHR
-#include <vulkan/vulkan.h>
-#include <vector>
 #include <android/log.h>
-#include <android/native_window.h>
 #include <android_native_app_glue.h>
 
-#include <cstdint>
+#include "renderer/VulkanRenderer.h"
 
 namespace
 {
@@ -13,8 +9,7 @@ namespace
 
     struct EngineState
     {
-        bool hasWindow = false;
-        bool isActive = false;
+        VulkanRenderer renderer;
     };
 
     void logInfo(const char* message)
@@ -37,417 +32,56 @@ namespace
         );
     }
 
-void inspectVulkan()
-{
-    logInfo("Начинаем проверку Vulkan.");
-
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "ATLAS";
-    appInfo.applicationVersion = VK_MAKE_VERSION(0, 2, 0);
-    appInfo.pEngineName = "ATLAS Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(0, 2, 0);
-
-    // Для первой проверки запрашиваем базовую версию Vulkan 1.0.
-    appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo instanceInfo{};
-    instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    instanceInfo.pApplicationInfo = &appInfo;
-
-    VkInstance instance = VK_NULL_HANDLE;
-
-    VkResult result = vkCreateInstance(
-        &instanceInfo,
-        nullptr,
-        &instance
-    );
-
-    if (result != VK_SUCCESS)
+    // Для версии 0.3 при изменении окна пересоздаём весь рендерер.
+    // Это не самое быстрое решение, но оно проще для первой проверки.
+    bool restartRenderer(android_app* app, EngineState* state)
     {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan: не удалось создать экземпляр. Код: %d",
-            static_cast<int>(result)
-        );
-        return;
-    }
-
-    logInfo("Vulkan: экземпляр успешно создан.");
-
-    uint32_t deviceCount = 0;
-
-    result = vkEnumeratePhysicalDevices(
-        instance,
-        &deviceCount,
-        nullptr
-    );
-
-    if (result != VK_SUCCESS || deviceCount == 0)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan: GPU не найден. Код: %d, количество: %u",
-            static_cast<int>(result),
-            deviceCount
-        );
-
-        vkDestroyInstance(instance, nullptr);
-        return;
-    }
-
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-
-    result = vkEnumeratePhysicalDevices(
-        instance,
-        &deviceCount,
-        devices.data()
-    );
-
-    if (result != VK_SUCCESS)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan: не удалось получить список GPU. Код: %d",
-            static_cast<int>(result)
-        );
-
-        vkDestroyInstance(instance, nullptr);
-        return;
-    }
-
-    __android_log_print(
-        ANDROID_LOG_INFO,
-        LOG_TAG,
-        "Vulkan: найдено устройств: %u",
-        deviceCount
-    );
-
-    for (uint32_t i = 0; i < deviceCount; ++i)
-    {
-        VkPhysicalDeviceProperties properties{};
-
-        vkGetPhysicalDeviceProperties(
-            devices[i],
-            &properties
-        );
-
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            LOG_TAG,
-            "GPU %u: %s",
-            i,
-            properties.deviceName
-        );
-
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            LOG_TAG,
-            "Версия Vulkan устройства: %u.%u.%u",
-            VK_VERSION_MAJOR(properties.apiVersion),
-            VK_VERSION_MINOR(properties.apiVersion),
-            VK_VERSION_PATCH(properties.apiVersion)
-        );
-
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            LOG_TAG,
-            "Vendor ID: 0x%04X, Device ID: 0x%04X",
-            properties.vendorID,
-            properties.deviceID
-        );
-    }
-
-    vkDestroyInstance(instance, nullptr);
-    logInfo("Vulkan: проверка завершена, ресурсы освобождены.");
-}
-
-void inspectVulkanSurface(ANativeWindow* window)
-{
-    if (window == nullptr)
-    {
-        logError("Vulkan surface: окно недоступно.");
-        return;
-    }
-
-    logInfo("Vulkan surface: начало проверки.");
-
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "ATLAS";
-    appInfo.applicationVersion = VK_MAKE_VERSION(0, 2, 0);
-    appInfo.pEngineName = "ATLAS Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(0, 2, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    // Расширения для работы с поверхностью Android.
-    const char* instanceExtensions[] = {
-        VK_KHR_SURFACE_EXTENSION_NAME,
-        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
-    };
-
-    VkInstanceCreateInfo instanceInfo{};
-    instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    instanceInfo.pApplicationInfo = &appInfo;
-    instanceInfo.enabledExtensionCount = 2;
-    instanceInfo.ppEnabledExtensionNames = instanceExtensions;
-
-    VkInstance instance = VK_NULL_HANDLE;
-
-    VkResult result = vkCreateInstance(
-        &instanceInfo,
-        nullptr,
-        &instance
-    );
-
-    if (result != VK_SUCCESS)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan surface: ошибка создания экземпляра: %d",
-            static_cast<int>(result)
-        );
-        return;
-    }
-
-    VkAndroidSurfaceCreateInfoKHR surfaceInfo{};
-    surfaceInfo.sType =
-        VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
-    surfaceInfo.window = window;
-
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-
-    result = vkCreateAndroidSurfaceKHR(
-        instance,
-        &surfaceInfo,
-        nullptr,
-        &surface
-    );
-
-    if (result != VK_SUCCESS)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan surface: ошибка создания поверхности: %d",
-            static_cast<int>(result)
-        );
-
-        vkDestroyInstance(instance, nullptr);
-        return;
-    }
-
-    logInfo("Vulkan surface: поверхность создана.");
-
-    uint32_t deviceCount = 0;
-
-    result = vkEnumeratePhysicalDevices(
-        instance,
-        &deviceCount,
-        nullptr
-    );
-
-    if (result != VK_SUCCESS || deviceCount == 0)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan surface: устройства не найдены. Код: %d",
-            static_cast<int>(result)
-        );
-
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        vkDestroyInstance(instance, nullptr);
-        return;
-    }
-
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-
-    result = vkEnumeratePhysicalDevices(
-        instance,
-        &deviceCount,
-        devices.data()
-    );
-
-    if (result != VK_SUCCESS)
-    {
-        __android_log_print(
-            ANDROID_LOG_ERROR,
-            LOG_TAG,
-            "Vulkan surface: ошибка получения устройств: %d",
-            static_cast<int>(result)
-        );
-
-        vkDestroySurfaceKHR(instance, surface, nullptr);
-        vkDestroyInstance(instance, nullptr);
-        return;
-    }
-
-    bool compatibleQueueFound = false;
-
-    for (uint32_t deviceIndex = 0;
-         deviceIndex < deviceCount;
-         ++deviceIndex)
-    {
-        VkPhysicalDevice device = devices[deviceIndex];
-
-        VkPhysicalDeviceProperties properties{};
-        vkGetPhysicalDeviceProperties(device, &properties);
-
-        uint32_t queueCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(
-            device,
-            &queueCount,
-            nullptr
-        );
-
-        std::vector<VkQueueFamilyProperties> queues(queueCount);
-
-        if (queueCount > 0)
+        if (app == nullptr ||
+            state == nullptr ||
+            app->window == nullptr)
         {
-            vkGetPhysicalDeviceQueueFamilyProperties(
-                device,
-                &queueCount,
-                queues.data()
-            );
+            logError("ATLAS: невозможно запустить рендерер без окна.");
+            return false;
         }
 
-        for (uint32_t queueIndex = 0;
-             queueIndex < queueCount;
-             ++queueIndex)
+        logInfo("ATLAS: создание Vulkan-рендерера.");
+
+        if (!state->renderer.initialize(app->window))
         {
-            VkBool32 supportsPresent = VK_FALSE;
-
-            result = vkGetPhysicalDeviceSurfaceSupportKHR(
-                device,
-                queueIndex,
-                surface,
-                &supportsPresent
-            );
-
-            if (result != VK_SUCCESS)
-            {
-                __android_log_print(
-                    ANDROID_LOG_ERROR,
-                    LOG_TAG,
-                    "Ошибка проверки очереди %u: %d",
-                    queueIndex,
-                    static_cast<int>(result)
-                );
-                continue;
-            }
-
-            const bool supportsGraphics =
-                (queues[queueIndex].queueFlags &
-                 VK_QUEUE_GRAPHICS_BIT) != 0;
-
-            if (supportsGraphics && supportsPresent == VK_TRUE)
-            {
-                compatibleQueueFound = true;
-
-                __android_log_print(
-                    ANDROID_LOG_INFO,
-                    LOG_TAG,
-                    "Vulkan surface: GPU '%s', очередь %u "
-                    "поддерживает графику и вывод на экран.",
-                    properties.deviceName,
-                    queueIndex
-                );
-
-                break;
-            }
+            logError("ATLAS: ошибка запуска Vulkan-рендерера.");
+            return false;
         }
 
-        if (compatibleQueueFound)
+        if (!state->renderer.drawFrame())
         {
-            break;
+            logError("ATLAS: первый Vulkan-кадр не выведен.");
+            state->renderer.shutdown();
+            return false;
         }
+
+        return true;
     }
 
-    if (!compatibleQueueFound)
+    void redraw(android_app* app, EngineState* state)
     {
-        logError(
-            "Vulkan surface: очередь с графикой и выводом "
-            "не найдена."
-        );
-    }
-
-    vkDestroySurfaceKHR(instance, surface, nullptr);
-    vkDestroyInstance(instance, nullptr);
-
-    logInfo("Vulkan surface: проверка завершена.");
-}
-
-    // Диагностическая отрисовка через системный буфер окна.
-    // В версии с Vulkan этот код будет заменён.
-    void drawTestImage(android_app* app)
-    {
-        if (app == nullptr || app->window == nullptr)
+        if (app == nullptr ||
+            state == nullptr ||
+            app->window == nullptr)
         {
             return;
         }
 
-        const int geometryResult = ANativeWindow_setBuffersGeometry(
-            app->window,
-            0,
-            0,
-            WINDOW_FORMAT_RGBA_8888
-        );
-
-        if (geometryResult != 0)
+        if (!state->renderer.isInitialized())
         {
-            logError("Не удалось установить формат буфера окна.");
+            restartRenderer(app, state);
             return;
         }
 
-        ANativeWindow_Buffer buffer{};
-
-        const int lockResult = ANativeWindow_lock(
-            app->window,
-            &buffer,
-            nullptr
-        );
-
-        if (lockResult != 0)
+        if (!state->renderer.drawFrame())
         {
-            logError("Не удалось получить буфер окна для рисования.");
-            return;
+            logInfo("ATLAS: повторное создание рендерера.");
+            restartRenderer(app, state);
         }
-
-        // Заполняем экран тёмно-синим цветом и рисуем светлую полосу.
-        // Формат буфера задан выше: RGBA, по одному байту на канал.
-        auto* pixels = static_cast<std::uint8_t*>(buffer.bits);
-
-        for (int y = 0; y < buffer.height; ++y)
-        {
-            for (int x = 0; x < buffer.width; ++x)
-            {
-                const int pixelIndex = (y * buffer.stride + x) * 4;
-
-                const bool isBand =
-                    y > buffer.height * 45 / 100 &&
-                    y < buffer.height * 55 / 100;
-
-                pixels[pixelIndex + 0] = isBand ? 55 : 10;   // R
-                pixels[pixelIndex + 1] = isBand ? 170 : 20;  // G
-                pixels[pixelIndex + 2] = isBand ? 220 : 35;  // B
-                pixels[pixelIndex + 3] = 255;                // A
-            }
-        }
-
-        const int postResult = ANativeWindow_unlockAndPost(app->window);
-
-        if (postResult != 0)
-        {
-            logError("Не удалось вывести буфер на экран.");
-            return;
-        }
-
-        logInfo("Диагностический кадр выведен.");
     }
 
     void handleAppCommand(android_app* app, int32_t command)
@@ -462,48 +96,49 @@ void inspectVulkanSurface(ANativeWindow* window)
         switch (command)
         {
             case APP_CMD_START:
-                logInfo("Приложение запущено.");
+                logInfo("ATLAS: приложение запущено.");
                 break;
 
             case APP_CMD_RESUME:
-                state->isActive = true;
-                logInfo("Приложение активно.");
+                logInfo("ATLAS: приложение активно.");
                 break;
 
             case APP_CMD_INIT_WINDOW:
-                state->hasWindow = app->window != nullptr;
-                logInfo("Окно создано.");
+                logInfo("ATLAS: окно создано.");
 
-                if (state->hasWindow)
+                if (app->window != nullptr)
                 {
-                    inspectVulkanSurface(app->window);
-                    drawTestImage(app);
+                    restartRenderer(app, state);
                 }
 
                 break;
 
             case APP_CMD_WINDOW_REDRAW_NEEDED:
-                logInfo("Запрошена перерисовка окна.");
-                drawTestImage(app);
+                logInfo("ATLAS: запрошена перерисовка.");
+                redraw(app, state);
                 break;
 
             case APP_CMD_WINDOW_RESIZED:
-                logInfo("Размер окна изменился.");
-                drawTestImage(app);
+                logInfo("ATLAS: размер окна изменился.");
+
+                if (app->window != nullptr)
+                {
+                    restartRenderer(app, state);
+                }
+
                 break;
 
             case APP_CMD_PAUSE:
-                state->isActive = false;
-                logInfo("Приложение приостановлено.");
+                logInfo("ATLAS: приложение приостановлено.");
                 break;
 
             case APP_CMD_TERM_WINDOW:
-                state->hasWindow = false;
-                logInfo("Окно закрыто системой.");
+                logInfo("ATLAS: окно закрывается, освобождаем Vulkan.");
+                state->renderer.shutdown();
                 break;
 
             case APP_CMD_STOP:
-                logInfo("Приложение остановлено.");
+                logInfo("ATLAS: приложение остановлено.");
                 break;
 
             default:
@@ -512,15 +147,11 @@ void inspectVulkanSurface(ANativeWindow* window)
     }
 }
 
-// Точка входа нативного приложения Android.
 void android_main(android_app* app)
 {
-    // Убеждаемся, что код native_app_glue подключён.
     app_dummy();
 
-    logInfo("ATLAS 0.2a: запуск C++ ядра.");
-
-    inspectVulkan();
+    logInfo("ATLAS 0.3: запуск C++ ядра.");
 
     EngineState state{};
 
@@ -532,8 +163,8 @@ void android_main(android_app* app)
         int events = 0;
         android_poll_source* source = nullptr;
 
-        // В ATLAS 0.1 непрерывная отрисовка не нужна.
-        // Ждём системное событие, не занимая процессор пустым циклом.
+        // Постоянная отрисовка пока не нужна.
+        // Ожидаем событие Android без пустого цикла.
         const int result = ALooper_pollOnce(
             -1,
             nullptr,
@@ -543,7 +174,7 @@ void android_main(android_app* app)
 
         if (result == ALOOPER_POLL_ERROR)
         {
-            logError("Ошибка ожидания системного события.");
+            logError("ATLAS: ошибка ожидания системного события.");
             break;
         }
 
@@ -553,5 +184,7 @@ void android_main(android_app* app)
         }
     }
 
-    logInfo("ATLAS 0.1: завершение работы.");
+    state.renderer.shutdown();
+
+    logInfo("ATLAS 0.3: завершение работы.");
 }

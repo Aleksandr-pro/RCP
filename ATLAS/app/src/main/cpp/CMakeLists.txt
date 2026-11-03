@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project(ATLAS LANGUAGES C CXX)
 
-# Вспомогательный код Android NDK для NativeActivity.
-# Это часть Android NDK, а не игровой движок.
 set(NATIVE_APP_GLUE_DIR
     "${CMAKE_ANDROID_NDK}/sources/android/native_app_glue"
 )
@@ -20,11 +18,11 @@ target_include_directories(
     "${NATIVE_APP_GLUE_DIR}"
 )
 
-# Наша собственная библиотека движка.
 add_library(
     atlas
     SHARED
     main.cpp
+    renderer/VulkanRenderer.cpp
 )
 
 target_compile_features(

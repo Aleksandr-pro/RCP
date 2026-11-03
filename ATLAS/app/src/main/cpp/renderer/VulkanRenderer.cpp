@@ -1,0 +1,992 @@
+#include "VulkanRenderer.h"
+
+#include <android/log.h>
+
+#include <algorithm>
+#include <cstring>
+#include <limits>
+#include <vector>
+
+namespace
+{
+    constexpr const char* LOG_TAG = "ATLAS";
+
+    void logInfo(const char* message)
+    {
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "%s",
+            message
+        );
+    }
+
+    bool checkResult(VkResult result, const char* operation)
+    {
+        if (result == VK_SUCCESS)
+        {
+            return true;
+        }
+
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "%s: ошибка VkResult=%d",
+            operation,
+            static_cast<int>(result)
+        );
+
+        return false;
+    }
+
+    bool supportsSwapchainExtension(VkPhysicalDevice device)
+    {
+        uint32_t count = 0;
+
+        VkResult result = vkEnumerateDeviceExtensionProperties(
+            device,
+            nullptr,
+            &count,
+            nullptr
+        );
+
+        if (result != VK_SUCCESS || count == 0)
+        {
+            return false;
+        }
+
+        std::vector<VkExtensionProperties> extensions(count);
+
+        result = vkEnumerateDeviceExtensionProperties(
+            device,
+            nullptr,
+            &count,
+            extensions.data()
+        );
+
+        if (result != VK_SUCCESS)
+        {
+            return false;
+        }
+
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            if (std::strcmp(
+                    extensions[i].extensionName,
+                    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+                ) == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    VkCompositeAlphaFlagBitsKHR chooseCompositeAlpha(
+        VkCompositeAlphaFlagsKHR supported
+    )
+    {
+        const VkCompositeAlphaFlagBitsKHR candidates[] = {
+            VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+            VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+            VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR
+        };
+
+        for (VkCompositeAlphaFlagBitsKHR candidate : candidates)
+        {
+            if ((supported & candidate) != 0)
+            {
+                return candidate;
+            }
+        }
+
+        return static_cast<VkCompositeAlphaFlagBitsKHR>(0);
+    }
+}
+
+VulkanRenderer::~VulkanRenderer()
+{
+    shutdown();
+}
+
+bool VulkanRenderer::isInitialized() const
+{
+    return initialized_;
+}
+
+bool VulkanRenderer::initialize(ANativeWindow* window)
+{
+    shutdown();
+
+    if (window == nullptr)
+    {
+        logInfo("Vulkan: окно отсутствует.");
+        return false;
+    }
+
+    if (!createInstance() ||
+        !createSurface(window) ||
+        !selectPhysicalDevice() ||
+        !createDevice() ||
+        !createSwapchain() ||
+        !createRenderPass() ||
+        !createImageViews() ||
+        !createFramebuffers() ||
+        !createCommandResources() ||
+        !createSyncObjects())
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: инициализация не завершена."
+        );
+
+        shutdown();
+        return false;
+    }
+
+    initialized_ = true;
+
+    logInfo("Vulkan: рендерер готов.");
+    return true;
+}
+
+bool VulkanRenderer::createInstance()
+{
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "ATLAS";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 3, 0);
+    appInfo.pEngineName = "ATLAS Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 3, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    const char* extensions[] = {
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+    };
+
+    VkInstanceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    info.pApplicationInfo = &appInfo;
+    info.enabledExtensionCount = 2;
+    info.ppEnabledExtensionNames = extensions;
+
+    return checkResult(
+        vkCreateInstance(&info, nullptr, &instance_),
+        "vkCreateInstance"
+    );
+}
+
+bool VulkanRenderer::createSurface(ANativeWindow* window)
+{
+    VkAndroidSurfaceCreateInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+    info.window = window;
+
+    return checkResult(
+        vkCreateAndroidSurfaceKHR(
+            instance_,
+            &info,
+            nullptr,
+            &surface_
+        ),
+        "vkCreateAndroidSurfaceKHR"
+    );
+}
+
+bool VulkanRenderer::selectPhysicalDevice()
+{
+    uint32_t deviceCount = 0;
+
+    VkResult result = vkEnumeratePhysicalDevices(
+        instance_,
+        &deviceCount,
+        nullptr
+    );
+
+    if (!checkResult(result, "vkEnumeratePhysicalDevices") ||
+        deviceCount == 0)
+    {
+        logInfo("Vulkan: доступные устройства не найдены.");
+        return false;
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+
+    result = vkEnumeratePhysicalDevices(
+        instance_,
+        &deviceCount,
+        devices.data()
+    );
+
+    if (!checkResult(result, "Получение списка GPU"))
+    {
+        return false;
+    }
+
+    for (uint32_t deviceIndex = 0;
+         deviceIndex < deviceCount;
+         ++deviceIndex)
+    {
+        VkPhysicalDevice candidate = devices[deviceIndex];
+
+        if (!supportsSwapchainExtension(candidate))
+        {
+            continue;
+        }
+
+        uint32_t queueCount = 0;
+
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            candidate,
+            &queueCount,
+            nullptr
+        );
+
+        if (queueCount == 0)
+        {
+            continue;
+        }
+
+        std::vector<VkQueueFamilyProperties> queues(queueCount);
+
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            candidate,
+            &queueCount,
+            queues.data()
+        );
+
+        for (uint32_t queueIndex = 0;
+             queueIndex < queueCount;
+             ++queueIndex)
+        {
+            const bool supportsGraphics =
+                (queues[queueIndex].queueFlags &
+                 VK_QUEUE_GRAPHICS_BIT) != 0;
+
+            if (!supportsGraphics || queues[queueIndex].queueCount == 0)
+            {
+                continue;
+            }
+
+            VkBool32 supportsPresent = VK_FALSE;
+
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(
+                candidate,
+                queueIndex,
+                surface_,
+                &supportsPresent
+            );
+
+            if (result != VK_SUCCESS ||
+                supportsPresent != VK_TRUE)
+            {
+                continue;
+            }
+
+            physicalDevice_ = candidate;
+            queueFamilyIndex_ = queueIndex;
+
+            VkPhysicalDeviceProperties properties{};
+            vkGetPhysicalDeviceProperties(
+                physicalDevice_,
+                &properties
+            );
+
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                LOG_TAG,
+                "Vulkan: выбран GPU '%s', очередь %u.",
+                properties.deviceName,
+                queueFamilyIndex_
+            );
+
+            return true;
+        }
+    }
+
+    __android_log_print(
+        ANDROID_LOG_ERROR,
+        LOG_TAG,
+        "Vulkan: подходящий GPU или общая очередь не найдены."
+    );
+
+    return false;
+}
+
+bool VulkanRenderer::createDevice()
+{
+    const float queuePriority = 1.0f;
+
+    VkDeviceQueueCreateInfo queueInfo{};
+    queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    queueInfo.queueFamilyIndex = queueFamilyIndex_;
+    queueInfo.queueCount = 1;
+    queueInfo.pQueuePriorities = &queuePriority;
+
+    const char* extensions[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+
+    VkDeviceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    info.queueCreateInfoCount = 1;
+    info.pQueueCreateInfos = &queueInfo;
+    info.enabledExtensionCount = 1;
+    info.ppEnabledExtensionNames = extensions;
+
+    if (!checkResult(
+            vkCreateDevice(
+                physicalDevice_,
+                &info,
+                nullptr,
+                &device_
+            ),
+            "vkCreateDevice"
+        ))
+    {
+        return false;
+    }
+
+    vkGetDeviceQueue(
+        device_,
+        queueFamilyIndex_,
+        0,
+        &queue_
+    );
+
+    return queue_ != VK_NULL_HANDLE;
+}
+
+bool VulkanRenderer::createSwapchain()
+{
+    VkSurfaceCapabilitiesKHR capabilities{};
+
+    if (!checkResult(
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+                physicalDevice_,
+                surface_,
+                &capabilities
+            ),
+            "vkGetPhysicalDeviceSurfaceCapabilitiesKHR"
+        ))
+    {
+        return false;
+    }
+
+    if ((capabilities.supportedUsageFlags &
+         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: поверхность не поддерживает color attachment."
+        );
+        return false;
+    }
+
+    uint32_t formatCount = 0;
+
+    if (!checkResult(
+            vkGetPhysicalDeviceSurfaceFormatsKHR(
+                physicalDevice_,
+                surface_,
+                &formatCount,
+                nullptr
+            ),
+            "Получение количества форматов"
+        ) || formatCount == 0)
+    {
+        return false;
+    }
+
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+
+    if (!checkResult(
+            vkGetPhysicalDeviceSurfaceFormatsKHR(
+                physicalDevice_,
+                surface_,
+                &formatCount,
+                formats.data()
+            ),
+            "Получение форматов поверхности"
+        ))
+    {
+        return false;
+    }
+
+    VkSurfaceFormatKHR selectedFormat = formats[0];
+
+    if (formatCount == 1 &&
+        formats[0].format == VK_FORMAT_UNDEFINED)
+    {
+        selectedFormat.format = VK_FORMAT_R8G8B8A8_UNORM;
+    }
+    else
+    {
+        for (uint32_t i = 0; i < formatCount; ++i)
+        {
+            if (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM ||
+                formats[i].format == VK_FORMAT_B8G8R8A8_UNORM)
+            {
+                selectedFormat = formats[i];
+                break;
+            }
+        }
+    }
+
+    swapchainFormat_ = selectedFormat.format;
+
+    if (capabilities.currentExtent.width !=
+        std::numeric_limits<uint32_t>::max())
+    {
+        swapchainExtent_ = capabilities.currentExtent;
+    }
+    else
+    {
+        // Если поверхность позволяет выбрать размер, используем
+        // минимально допустимый. Обычно Android сообщает currentExtent.
+        swapchainExtent_ = capabilities.minImageExtent;
+    }
+
+    if (swapchainExtent_.width == 0 ||
+        swapchainExtent_.height == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: размер поверхности равен нулю."
+        );
+        return false;
+    }
+
+    uint32_t imageCount = capabilities.minImageCount + 1;
+
+    if (capabilities.maxImageCount > 0 &&
+        imageCount > capabilities.maxImageCount)
+    {
+        imageCount = capabilities.maxImageCount;
+    }
+
+    const VkCompositeAlphaFlagBitsKHR compositeAlpha =
+        chooseCompositeAlpha(capabilities.supportedCompositeAlpha);
+
+    if (compositeAlpha == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: подходящий composite alpha не найден."
+        );
+        return false;
+    }
+
+    VkSwapchainCreateInfoKHR info{};
+    info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    info.surface = surface_;
+    info.minImageCount = imageCount;
+    info.imageFormat = selectedFormat.format;
+    info.imageColorSpace = selectedFormat.colorSpace;
+    info.imageExtent = swapchainExtent_;
+    info.imageArrayLayers = 1;
+    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    info.preTransform = capabilities.currentTransform;
+    info.compositeAlpha = compositeAlpha;
+
+    // FIFO обязателен для реализации Vulkan с поддержкой swapchain.
+    info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    info.clipped = VK_TRUE;
+    info.oldSwapchain = VK_NULL_HANDLE;
+
+    if (!checkResult(
+            vkCreateSwapchainKHR(
+                device_,
+                &info,
+                nullptr,
+                &swapchain_
+            ),
+            "vkCreateSwapchainKHR"
+        ))
+    {
+        return false;
+    }
+
+    uint32_t actualImageCount = 0;
+
+    if (!checkResult(
+            vkGetSwapchainImagesKHR(
+                device_,
+                swapchain_,
+                &actualImageCount,
+                nullptr
+            ),
+            "Получение количества изображений swapchain"
+        ) || actualImageCount == 0)
+    {
+        return false;
+    }
+
+    images_.resize(actualImageCount);
+
+    if (!checkResult(
+            vkGetSwapchainImagesKHR(
+                device_,
+                swapchain_,
+                &actualImageCount,
+                images_.data()
+            ),
+            "Получение изображений swapchain"
+        ))
+    {
+        return false;
+    }
+
+    images_.resize(actualImageCount);
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        LOG_TAG,
+        "Vulkan: swapchain %ux%u, изображений: %u.",
+        swapchainExtent_.width,
+        swapchainExtent_.height,
+        actualImageCount
+    );
+
+    return true;
+}
+
+bool VulkanRenderer::createRenderPass()
+{
+    VkAttachmentDescription attachment{};
+    attachment.format = swapchainFormat_;
+    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference colorReference{};
+    colorReference.attachment = 0;
+    colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorReference;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    info.attachmentCount = 1;
+    info.pAttachments = &attachment;
+    info.subpassCount = 1;
+    info.pSubpasses = &subpass;
+    info.dependencyCount = 1;
+    info.pDependencies = &dependency;
+
+    return checkResult(
+        vkCreateRenderPass(
+            device_,
+            &info,
+            nullptr,
+            &renderPass_
+        ),
+        "vkCreateRenderPass"
+    );
+}
+
+bool VulkanRenderer::createImageViews()
+{
+    imageViews_.resize(images_.size(), VK_NULL_HANDLE);
+
+    for (size_t i = 0; i < images_.size(); ++i)
+    {
+        VkImageViewCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        info.image = images_[i];
+        info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        info.format = swapchainFormat_;
+
+        info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+        info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        info.subresourceRange.baseMipLevel = 0;
+        info.subresourceRange.levelCount = 1;
+        info.subresourceRange.baseArrayLayer = 0;
+        info.subresourceRange.layerCount = 1;
+
+        if (!checkResult(
+                vkCreateImageView(
+                    device_,
+                    &info,
+                    nullptr,
+                    &imageViews_[i]
+                ),
+                "vkCreateImageView"
+            ))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool VulkanRenderer::createFramebuffers()
+{
+    framebuffers_.resize(imageViews_.size(), VK_NULL_HANDLE);
+
+    for (size_t i = 0; i < imageViews_.size(); ++i)
+    {
+        VkFramebufferCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        info.renderPass = renderPass_;
+        info.attachmentCount = 1;
+        info.pAttachments = &imageViews_[i];
+        info.width = swapchainExtent_.width;
+        info.height = swapchainExtent_.height;
+        info.layers = 1;
+
+        if (!checkResult(
+                vkCreateFramebuffer(
+                    device_,
+                    &info,
+                    nullptr,
+                    &framebuffers_[i]
+                ),
+                "vkCreateFramebuffer"
+            ))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool VulkanRenderer::createCommandResources()
+{
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = queueFamilyIndex_;
+
+    if (!checkResult(
+            vkCreateCommandPool(
+                device_,
+                &poolInfo,
+                nullptr,
+                &commandPool_
+            ),
+            "vkCreateCommandPool"
+        ))
+    {
+        return false;
+    }
+
+    commandBuffers_.resize(framebuffers_.size(), VK_NULL_HANDLE);
+
+    VkCommandBufferAllocateInfo allocateInfo{};
+    allocateInfo.sType =
+        VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocateInfo.commandPool = commandPool_;
+    allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocateInfo.commandBufferCount =
+        static_cast<uint32_t>(commandBuffers_.size());
+
+    if (!checkResult(
+            vkAllocateCommandBuffers(
+                device_,
+                &allocateInfo,
+                commandBuffers_.data()
+            ),
+            "vkAllocateCommandBuffers"
+        ))
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < commandBuffers_.size(); ++i)
+    {
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        if (!checkResult(
+                vkBeginCommandBuffer(commandBuffers_[i], &beginInfo),
+                "vkBeginCommandBuffer"
+            ))
+        {
+            return false;
+        }
+
+        VkClearValue clearColor{};
+        clearColor.color.float32[0] = 0.02f;
+        clearColor.color.float32[1] = 0.22f;
+        clearColor.color.float32[2] = 0.12f;
+        clearColor.color.float32[3] = 1.0f;
+
+        VkRenderPassBeginInfo renderInfo{};
+        renderInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderInfo.renderPass = renderPass_;
+        renderInfo.framebuffer = framebuffers_[i];
+        renderInfo.renderArea.offset = {0, 0};
+        renderInfo.renderArea.extent = swapchainExtent_;
+        renderInfo.clearValueCount = 1;
+        renderInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(
+            commandBuffers_[i],
+            &renderInfo,
+            VK_SUBPASS_CONTENTS_INLINE
+        );
+
+        vkCmdEndRenderPass(commandBuffers_[i]);
+
+        if (!checkResult(
+                vkEndCommandBuffer(commandBuffers_[i]),
+                "vkEndCommandBuffer"
+            ))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool VulkanRenderer::createSyncObjects()
+{
+    VkSemaphoreCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    if (!checkResult(
+            vkCreateSemaphore(
+                device_,
+                &info,
+                nullptr,
+                &imageAvailable_
+            ),
+            "Создание imageAvailable"
+        ))
+    {
+        return false;
+    }
+
+    if (!checkResult(
+            vkCreateSemaphore(
+                device_,
+                &info,
+                nullptr,
+                &renderFinished_
+            ),
+            "Создание renderFinished"
+        ))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool VulkanRenderer::drawFrame()
+{
+    if (!initialized_)
+    {
+        return false;
+    }
+
+    uint32_t imageIndex = 0;
+
+    VkResult result = vkAcquireNextImageKHR(
+        device_,
+        swapchain_,
+        UINT64_MAX,
+        imageAvailable_,
+        VK_NULL_HANDLE,
+        &imageIndex
+    );
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        logInfo("Vulkan: swapchain устарел при получении кадра.");
+        return false;
+    }
+
+    const bool acquireSuboptimal = result == VK_SUBOPTIMAL_KHR;
+
+    if (result != VK_SUCCESS && !acquireSuboptimal)
+    {
+        checkResult(result, "vkAcquireNextImageKHR");
+        return false;
+    }
+
+    VkPipelineStageFlags waitStage =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &imageAvailable_;
+    submitInfo.pWaitDstStageMask = &waitStage;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffers_[imageIndex];
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &renderFinished_;
+
+    result = vkQueueSubmit(
+        queue_,
+        1,
+        &submitInfo,
+        VK_NULL_HANDLE
+    );
+
+    if (!checkResult(result, "vkQueueSubmit"))
+    {
+        return false;
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &renderFinished_;
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &swapchain_;
+    presentInfo.pImageIndices = &imageIndex;
+
+    result = vkQueuePresentKHR(queue_, &presentInfo);
+
+    // Для первой диагностической версии ждём завершения очереди.
+    // Для полноценного игрового цикла заменим это на нормальную
+    // многокадровую синхронизацию.
+    const VkResult idleResult = vkQueueWaitIdle(queue_);
+
+    if (!checkResult(idleResult, "vkQueueWaitIdle"))
+    {
+        return false;
+    }
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    {
+        logInfo("Vulkan: swapchain устарел при выводе кадра.");
+        return false;
+    }
+
+    if (result == VK_SUBOPTIMAL_KHR || acquireSuboptimal)
+    {
+        logInfo("Vulkan: swapchain требует обновления.");
+        return false;
+    }
+
+    if (!checkResult(result, "vkQueuePresentKHR"))
+    {
+        return false;
+    }
+
+    logInfo("Vulkan: кадр успешно отправлен на экран.");
+    return true;
+}
+
+void VulkanRenderer::shutdown()
+{
+    initialized_ = false;
+
+    if (device_ != VK_NULL_HANDLE)
+    {
+        vkDeviceWaitIdle(device_);
+
+        if (imageAvailable_ != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device_, imageAvailable_, nullptr);
+            imageAvailable_ = VK_NULL_HANDLE;
+        }
+
+        if (renderFinished_ != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(device_, renderFinished_, nullptr);
+            renderFinished_ = VK_NULL_HANDLE;
+        }
+
+        if (commandPool_ != VK_NULL_HANDLE)
+        {
+            // Уничтожение пула освобождает его командные буферы.
+            vkDestroyCommandPool(device_, commandPool_, nullptr);
+            commandPool_ = VK_NULL_HANDLE;
+        }
+
+        commandBuffers_.clear();
+
+        for (VkFramebuffer framebuffer : framebuffers_)
+        {
+            if (framebuffer != VK_NULL_HANDLE)
+            {
+                vkDestroyFramebuffer(device_, framebuffer, nullptr);
+            }
+        }
+
+        framebuffers_.clear();
+
+        for (VkImageView imageView : imageViews_)
+        {
+            if (imageView != VK_NULL_HANDLE)
+            {
+                vkDestroyImageView(device_, imageView, nullptr);
+            }
+        }
+
+        imageViews_.clear();
+
+        if (renderPass_ != VK_NULL_HANDLE)
+        {
+            vkDestroyRenderPass(device_, renderPass_, nullptr);
+            renderPass_ = VK_NULL_HANDLE;
+        }
+
+        if (swapchain_ != VK_NULL_HANDLE)
+        {
+            vkDestroySwapchainKHR(device_, swapchain_, nullptr);
+            swapchain_ = VK_NULL_HANDLE;
+        }
+
+        images_.clear();
+
+        vkDestroyDevice(device_, nullptr);
+        device_ = VK_NULL_HANDLE;
+    }
+
+    queue_ = VK_NULL_HANDLE;
+    physicalDevice_ = VK_NULL_HANDLE;
+
+    if (surface_ != VK_NULL_HANDLE &&
+        instance_ != VK_NULL_HANDLE)
+    {
+        vkDestroySurfaceKHR(instance_, surface_, nullptr);
+        surface_ = VK_NULL_HANDLE;
+    }
+
+    if (instance_ != VK_NULL_HANDLE)
+    {
+        vkDestroyInstance(instance_, nullptr);
+        instance_ = VK_NULL_HANDLE;
+    }
+
+    swapchainFormat_ = VK_FORMAT_UNDEFINED;
+    swapchainExtent_ = {};
+    queueFamilyIndex_ = 0;
+}
