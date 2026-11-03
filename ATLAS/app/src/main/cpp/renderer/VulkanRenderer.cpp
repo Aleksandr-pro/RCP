@@ -116,7 +116,10 @@ bool VulkanRenderer::isInitialized() const
     return initialized_;
 }
 
-bool VulkanRenderer::initialize(ANativeWindow* window)
+bool VulkanRenderer::initialize(
+    ANativeWindow* window,
+    AAssetManager* assetManager
+)
 {
     shutdown();
 
@@ -126,12 +129,23 @@ bool VulkanRenderer::initialize(ANativeWindow* window)
         return false;
     }
 
+    if (assetManager == nullptr)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: AssetManager отсутствует."
+        );
+        return false;
+    }
+
     if (!createInstance() ||
         !createSurface(window) ||
         !selectPhysicalDevice() ||
         !createDevice() ||
         !createSwapchain() ||
         !createRenderPass() ||
+        !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
         !createFramebuffers() ||
         !createCommandResources() ||
@@ -610,6 +624,284 @@ bool VulkanRenderer::createRenderPass()
     );
 }
 
+bool VulkanRenderer::loadShaderModule(
+    AAssetManager* assetManager,
+    const char* path,
+    VkShaderModule* shaderModule
+)
+{
+    if (assetManager == nullptr ||
+        path == nullptr ||
+        shaderModule == nullptr)
+    {
+        return false;
+    }
+
+    *shaderModule = VK_NULL_HANDLE;
+
+    AAsset* asset = AAssetManager_open(
+        assetManager,
+        path,
+        AASSET_MODE_BUFFER
+    );
+
+    if (asset == nullptr)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Не удалось открыть шейдер: %s",
+            path
+        );
+        return false;
+    }
+
+    const off_t length = AAsset_getLength(asset);
+
+    if (length <= 0 || length % 4 != 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Некорректный размер шейдера %s: %lld",
+            path,
+            static_cast<long long>(length)
+        );
+
+        AAsset_close(asset);
+        return false;
+    }
+
+    // SPIR-V состоит из 32-битных слов.
+    std::vector<uint32_t> code(
+        static_cast<size_t>(length) / sizeof(uint32_t)
+    );
+
+    auto* destination = reinterpret_cast<unsigned char*>(code.data());
+    size_t totalRead = 0;
+    const size_t expectedSize = static_cast<size_t>(length);
+
+    while (totalRead < expectedSize)
+    {
+        const int bytesRead = AAsset_read(
+            asset,
+            destination + totalRead,
+            expectedSize - totalRead
+        );
+
+        if (bytesRead <= 0)
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "Не удалось полностью прочитать шейдер: %s",
+                path
+            );
+
+            AAsset_close(asset);
+            return false;
+        }
+
+        totalRead += static_cast<size_t>(bytesRead);
+    }
+
+    AAsset_close(asset);
+
+    VkShaderModuleCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    info.codeSize = expectedSize;
+    info.pCode = code.data();
+
+    const VkResult result = vkCreateShaderModule(
+        device_,
+        &info,
+        nullptr,
+        shaderModule
+    );
+
+    if (!checkResult(result, "vkCreateShaderModule"))
+    {
+        return false;
+    }
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        LOG_TAG,
+        "Шейдер загружен: %s",
+        path
+    );
+
+    return true;
+}
+
+bool VulkanRenderer::createGraphicsPipeline(
+    AAssetManager* assetManager
+)
+{
+    VkShaderModule vertexShader = VK_NULL_HANDLE;
+    VkShaderModule fragmentShader = VK_NULL_HANDLE;
+
+    if (!loadShaderModule(
+            assetManager,
+            "shaders/triangle.vert.spv",
+            &vertexShader
+        ))
+    {
+        return false;
+    }
+
+    if (!loadShaderModule(
+            assetManager,
+            "shaders/triangle.frag.spv",
+            &fragmentShader
+        ))
+    {
+        vkDestroyShaderModule(device_, vertexShader, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertexStage{};
+    vertexStage.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertexStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertexStage.module = vertexShader;
+    vertexStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragmentStage{};
+    fragmentStage.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragmentStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragmentStage.module = fragmentShader;
+    fragmentStage.pName = "main";
+
+    const VkPipelineShaderStageCreateInfo stages[] = {
+        vertexStage,
+        fragmentStage
+    };
+
+    // Данные вершин пока зашиты в вершинный шейдер,
+    // поэтому отдельный буфер вершин не нужен.
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapchainExtent_.width);
+    viewport.height = static_cast<float>(swapchainExtent_.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = swapchainExtent_;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+
+    // Пока не отбрасываем ни одну сторону треугольника.
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState colorAttachment{};
+    colorAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT |
+        VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT |
+        VK_COLOR_COMPONENT_A_BIT;
+    colorAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorAttachment;
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
+    VkResult result = vkCreatePipelineLayout(
+        device_,
+        &layoutInfo,
+        nullptr,
+        &pipelineLayout_
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        checkResult(result, "vkCreatePipelineLayout");
+
+        vkDestroyShaderModule(device_, fragmentShader, nullptr);
+        vkDestroyShaderModule(device_, vertexShader, nullptr);
+        return false;
+    }
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.layout = pipelineLayout_;
+    pipelineInfo.renderPass = renderPass_;
+    pipelineInfo.subpass = 0;
+
+    result = vkCreateGraphicsPipelines(
+        device_,
+        VK_NULL_HANDLE,
+        1,
+        &pipelineInfo,
+        nullptr,
+        &graphicsPipeline_
+    );
+
+    // После создания конвейера отдельные модули шейдеров
+    // больше не нужны.
+    vkDestroyShaderModule(device_, fragmentShader, nullptr);
+    vkDestroyShaderModule(device_, vertexShader, nullptr);
+
+    if (!checkResult(result, "vkCreateGraphicsPipelines"))
+    {
+        // pipelineLayout_ будет освобождён в shutdown().
+        return false;
+    }
+
+    logInfo("Vulkan: графический конвейер создан.");
+    return true;
+}
+
 bool VulkanRenderer::createImageViews()
 {
     imageViews_.resize(images_.size(), VK_NULL_HANDLE);
@@ -755,6 +1047,21 @@ bool VulkanRenderer::createCommandResources()
             commandBuffers_[i],
             &renderInfo,
             VK_SUBPASS_CONTENTS_INLINE
+        );
+
+        vkCmdBindPipeline(
+            commandBuffers_[i],
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            graphicsPipeline_
+        );
+
+        // Три вершины, один экземпляр.
+        vkCmdDraw(
+            commandBuffers_[i],
+            3,
+            1,
+            0,
+            0
         );
 
         vkCmdEndRenderPass(commandBuffers_[i]);
@@ -931,6 +1238,18 @@ void VulkanRenderer::shutdown()
         }
 
         commandBuffers_.clear();
+
+        if (graphicsPipeline_ != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device_, graphicsPipeline_, nullptr);
+            graphicsPipeline_ = VK_NULL_HANDLE;
+        }
+
+        if (pipelineLayout_ != VK_NULL_HANDLE)
+        {
+            vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+            pipelineLayout_ = VK_NULL_HANDLE;
+        }
 
         for (VkFramebuffer framebuffer : framebuffers_)
         {
