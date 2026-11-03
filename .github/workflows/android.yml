@@ -24,13 +24,30 @@ jobs:
             echo "::error::Android SDK install failed: $(tail -c 3000 sdk-install.log)"
             exit 1
           fi
+      - name: Compile shaders
+        run: |
+          GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
+          for stage in vert frag; do
+            "$GLSLC" "ATLAS/app/src/main/shaders/triangle.$stage" -o "$RUNNER_TEMP/triangle.$stage.spv"
+            cmp "$RUNNER_TEMP/triangle.$stage.spv" "ATLAS/app/src/main/assets/shaders/triangle.$stage.spv"
+          done
       - name: Build debug APK
         working-directory: ATLAS
         run: ./gradlew assembleDebug
+      - name: Verify APK contains shader assets
+        run: |
+          python3 - <<'PYCODE'
+          import zipfile
+          with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
+              for stage in ('vert', 'frag'):
+                  asset = f'assets/shaders/triangle.{stage}.spv'
+                  with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
+                      assert apk.read(asset) == expected.read(), asset
+          PYCODE
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.3-debug
+          name: ATLAS-0.4a-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -89,6 +106,7 @@ jobs:
       - name: Install image inspection tool
         run: python3 -m pip install --user --break-system-packages Pillow
       - name: Test on Android emulator
+        timeout-minutes: 8
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30

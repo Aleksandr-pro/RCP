@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'status=$?; if [ "$status" -ne 0 ]; then echo "::error::Emulator test failed on line $LINENO (exit $status)"; if [ -f atlas-log.txt ]; then tail -n 30 atlas-log.txt | while IFS= read -r line; do echo "::notice::$line"; done; fi; fi' EXIT
 package=com.atlas.engine
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
