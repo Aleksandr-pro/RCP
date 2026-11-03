@@ -1,3 +1,4 @@
+#define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <android/log.h>
@@ -164,6 +165,223 @@ void inspectVulkan()
     logInfo("Vulkan: проверка завершена, ресурсы освобождены.");
 }
 
+void inspectVulkanSurface(ANativeWindow* window)
+{
+    if (window == nullptr)
+    {
+        logError("Vulkan surface: окно недоступно.");
+        return;
+    }
+
+    logInfo("Vulkan surface: начало проверки.");
+
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "ATLAS";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 2, 0);
+    appInfo.pEngineName = "ATLAS Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 2, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    // Расширения для работы с поверхностью Android.
+    const char* instanceExtensions[] = {
+        VK_KHR_SURFACE_EXTENSION_NAME,
+        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+    };
+
+    VkInstanceCreateInfo instanceInfo{};
+    instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instanceInfo.pApplicationInfo = &appInfo;
+    instanceInfo.enabledExtensionCount = 2;
+    instanceInfo.ppEnabledExtensionNames = instanceExtensions;
+
+    VkInstance instance = VK_NULL_HANDLE;
+
+    VkResult result = vkCreateInstance(
+        &instanceInfo,
+        nullptr,
+        &instance
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan surface: ошибка создания экземпляра: %d",
+            static_cast<int>(result)
+        );
+        return;
+    }
+
+    VkAndroidSurfaceCreateInfoKHR surfaceInfo{};
+    surfaceInfo.sType =
+        VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
+    surfaceInfo.window = window;
+
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+
+    result = vkCreateAndroidSurfaceKHR(
+        instance,
+        &surfaceInfo,
+        nullptr,
+        &surface
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan surface: ошибка создания поверхности: %d",
+            static_cast<int>(result)
+        );
+
+        vkDestroyInstance(instance, nullptr);
+        return;
+    }
+
+    logInfo("Vulkan surface: поверхность создана.");
+
+    uint32_t deviceCount = 0;
+
+    result = vkEnumeratePhysicalDevices(
+        instance,
+        &deviceCount,
+        nullptr
+    );
+
+    if (result != VK_SUCCESS || deviceCount == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan surface: устройства не найдены. Код: %d",
+            static_cast<int>(result)
+        );
+
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyInstance(instance, nullptr);
+        return;
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+
+    result = vkEnumeratePhysicalDevices(
+        instance,
+        &deviceCount,
+        devices.data()
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan surface: ошибка получения устройств: %d",
+            static_cast<int>(result)
+        );
+
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyInstance(instance, nullptr);
+        return;
+    }
+
+    bool compatibleQueueFound = false;
+
+    for (uint32_t deviceIndex = 0;
+         deviceIndex < deviceCount;
+         ++deviceIndex)
+    {
+        VkPhysicalDevice device = devices[deviceIndex];
+
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device, &properties);
+
+        uint32_t queueCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(
+            device,
+            &queueCount,
+            nullptr
+        );
+
+        std::vector<VkQueueFamilyProperties> queues(queueCount);
+
+        if (queueCount > 0)
+        {
+            vkGetPhysicalDeviceQueueFamilyProperties(
+                device,
+                &queueCount,
+                queues.data()
+            );
+        }
+
+        for (uint32_t queueIndex = 0;
+             queueIndex < queueCount;
+             ++queueIndex)
+        {
+            VkBool32 supportsPresent = VK_FALSE;
+
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(
+                device,
+                queueIndex,
+                surface,
+                &supportsPresent
+            );
+
+            if (result != VK_SUCCESS)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Ошибка проверки очереди %u: %d",
+                    queueIndex,
+                    static_cast<int>(result)
+                );
+                continue;
+            }
+
+            const bool supportsGraphics =
+                (queues[queueIndex].queueFlags &
+                 VK_QUEUE_GRAPHICS_BIT) != 0;
+
+            if (supportsGraphics && supportsPresent == VK_TRUE)
+            {
+                compatibleQueueFound = true;
+
+                __android_log_print(
+                    ANDROID_LOG_INFO,
+                    LOG_TAG,
+                    "Vulkan surface: GPU '%s', очередь %u "
+                    "поддерживает графику и вывод на экран.",
+                    properties.deviceName,
+                    queueIndex
+                );
+
+                break;
+            }
+        }
+
+        if (compatibleQueueFound)
+        {
+            break;
+        }
+    }
+
+    if (!compatibleQueueFound)
+    {
+        logError(
+            "Vulkan surface: очередь с графикой и выводом "
+            "не найдена."
+        );
+    }
+
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    vkDestroyInstance(instance, nullptr);
+
+    logInfo("Vulkan surface: проверка завершена.");
+}
+
     // Диагностическая отрисовка через системный буфер окна.
     // В версии с Vulkan этот код будет заменён.
     void drawTestImage(android_app* app)
@@ -255,7 +473,13 @@ void inspectVulkan()
             case APP_CMD_INIT_WINDOW:
                 state->hasWindow = app->window != nullptr;
                 logInfo("Окно создано.");
-                drawTestImage(app);
+
+                if (state->hasWindow)
+                {
+                    inspectVulkanSurface(app->window);
+                    drawTestImage(app);
+                }
+
                 break;
 
             case APP_CMD_WINDOW_REDRAW_NEEDED:
