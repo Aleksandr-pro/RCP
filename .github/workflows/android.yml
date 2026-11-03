@@ -74,7 +74,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Install build components
-        run: "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
       - name: Build emulator APK
         working-directory: ATLAS
         env:
