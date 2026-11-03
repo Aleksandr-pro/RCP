@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 
 #include <android/native_window.h>
+#include <android/asset_manager.h>
 
 #include <cstdint>
 #include <vector>
@@ -18,7 +19,10 @@ public:
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
 
     // Создаёт Vulkan-ресурсы для текущего окна.
-    bool initialize(ANativeWindow* window);
+    bool initialize(
+        ANativeWindow* window,
+        AAssetManager* assetManager
+    );
 
     // Выводит один кадр.
     bool drawFrame();
@@ -35,6 +39,13 @@ private:
     bool createDevice();
     bool createSwapchain();
     bool createRenderPass();
+    bool createGraphicsPipeline(AAssetManager* assetManager);
+
+    bool loadShaderModule(
+        AAssetManager* assetManager,
+        const char* path,
+        VkShaderModule* shaderModule
+    );
     bool createImageViews();
     bool createFramebuffers();
     bool createCommandResources();
@@ -59,6 +70,8 @@ private:
     std::vector<VkCommandBuffer> commandBuffers_;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
 
     VkSemaphore imageAvailable_ = VK_NULL_HANDLE;

@@ -46,7 +46,10 @@ namespace
 
         logInfo("ATLAS: создание Vulkan-рендерера.");
 
-        if (!state->renderer.initialize(app->window))
+        if (!state->renderer.initialize(
+                app->window,
+                app->activity->assetManager
+            ))
         {
             logError("ATLAS: ошибка запуска Vulkan-рендерера.");
             return false;
@@ -151,7 +154,7 @@ void android_main(android_app* app)
 {
     app_dummy();
 
-    logInfo("ATLAS 0.3: запуск C++ ядра.");
+    logInfo("ATLAS 0.4b: запуск C++ ядра.");
 
     EngineState state{};
 
@@ -186,5 +189,5 @@ void android_main(android_app* app)
 
     state.renderer.shutdown();
 
-    logInfo("ATLAS 0.3: завершение работы.");
+    logInfo("ATLAS 0.4b: завершение работы.");
 }
