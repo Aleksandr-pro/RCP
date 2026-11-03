@@ -46,4 +46,5 @@ target_link_libraries(
     android_native_app_glue
     android
     log
+    vulkan
 )
