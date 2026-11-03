@@ -1,3 +1,5 @@
+#include <vulkan/vulkan.h>
+#include <vector>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
@@ -33,6 +35,134 @@ namespace
             message
         );
     }
+
+void inspectVulkan()
+{
+    logInfo("Начинаем проверку Vulkan.");
+
+    VkApplicationInfo appInfo{};
+    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    appInfo.pApplicationName = "ATLAS";
+    appInfo.applicationVersion = VK_MAKE_VERSION(0, 2, 0);
+    appInfo.pEngineName = "ATLAS Engine";
+    appInfo.engineVersion = VK_MAKE_VERSION(0, 2, 0);
+
+    // Для первой проверки запрашиваем базовую версию Vulkan 1.0.
+    appInfo.apiVersion = VK_API_VERSION_1_0;
+
+    VkInstanceCreateInfo instanceInfo{};
+    instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    instanceInfo.pApplicationInfo = &appInfo;
+
+    VkInstance instance = VK_NULL_HANDLE;
+
+    VkResult result = vkCreateInstance(
+        &instanceInfo,
+        nullptr,
+        &instance
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: не удалось создать экземпляр. Код: %d",
+            static_cast<int>(result)
+        );
+        return;
+    }
+
+    logInfo("Vulkan: экземпляр успешно создан.");
+
+    uint32_t deviceCount = 0;
+
+    result = vkEnumeratePhysicalDevices(
+        instance,
+        &deviceCount,
+        nullptr
+    );
+
+    if (result != VK_SUCCESS || deviceCount == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: GPU не найден. Код: %d, количество: %u",
+            static_cast<int>(result),
+            deviceCount
+        );
+
+        vkDestroyInstance(instance, nullptr);
+        return;
+    }
+
+    std::vector<VkPhysicalDevice> devices(deviceCount);
+
+    result = vkEnumeratePhysicalDevices(
+        instance,
+        &deviceCount,
+        devices.data()
+    );
+
+    if (result != VK_SUCCESS)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: не удалось получить список GPU. Код: %d",
+            static_cast<int>(result)
+        );
+
+        vkDestroyInstance(instance, nullptr);
+        return;
+    }
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        LOG_TAG,
+        "Vulkan: найдено устройств: %u",
+        deviceCount
+    );
+
+    for (uint32_t i = 0; i < deviceCount; ++i)
+    {
+        VkPhysicalDeviceProperties properties{};
+
+        vkGetPhysicalDeviceProperties(
+            devices[i],
+            &properties
+        );
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "GPU %u: %s",
+            i,
+            properties.deviceName
+        );
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "Версия Vulkan устройства: %u.%u.%u",
+            VK_VERSION_MAJOR(properties.apiVersion),
+            VK_VERSION_MINOR(properties.apiVersion),
+            VK_VERSION_PATCH(properties.apiVersion)
+        );
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "Vendor ID: 0x%04X, Device ID: 0x%04X",
+            properties.vendorID,
+            properties.deviceID
+        );
+    }
+
+    vkDestroyInstance(instance, nullptr);
+    logInfo("Vulkan: проверка завершена, ресурсы освобождены.");
+}
 
     // Диагностическая отрисовка через системный буфер окна.
     // В версии с Vulkan этот код будет заменён.
@@ -164,7 +294,9 @@ void android_main(android_app* app)
     // Убеждаемся, что код native_app_glue подключён.
     app_dummy();
 
-    logInfo("ATLAS 0.1: запуск C++ ядра.");
+    logInfo("ATLAS 0.2a: запуск C++ ядра.");
+
+    inspectVulkan();
 
     EngineState state{};
 
