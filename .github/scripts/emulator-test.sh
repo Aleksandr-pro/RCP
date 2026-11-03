@@ -12,6 +12,10 @@ adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 grep -q 'ATLAS 0.2a: запуск C++ ядра' atlas-log.txt
 grep -q 'Диагностический кадр выведен' atlas-log.txt
 grep -q 'Начинаем проверку Vulkan' atlas-log.txt
+grep -q 'Vulkan surface: начало проверки' atlas-log.txt
+grep -q 'Vulkan surface: поверхность создана' atlas-log.txt
+grep -q 'поддерживает графику и вывод на экран' atlas-log.txt
+grep -q 'Vulkan surface: проверка завершена' atlas-log.txt
 adb shell input keyevent KEYCODE_HOME
 sleep 3
 adb shell am start -n "$package/android.app.NativeActivity"
