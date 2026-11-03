@@ -18,7 +18,12 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Install Android SDK components
-        run: sdkmanager 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if ! "$SDKMANAGER" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1' > sdk-install.log 2>&1; then
+            echo "::error::Android SDK install failed: $(tail -c 3000 sdk-install.log)"
+            exit 1
+          fi
       - name: Build debug APK
         working-directory: ATLAS
         run: ./gradlew assembleDebug
