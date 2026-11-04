@@ -48,6 +48,7 @@ private:
     );
     bool createImageViews();
     bool createFramebuffers();
+    bool createVertexBuffer();
     bool createCommandResources();
     bool createSyncObjects();
 
@@ -72,6 +73,8 @@ private:
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
 
     VkSemaphore imageAvailable_ = VK_NULL_HANDLE;

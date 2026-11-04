@@ -3,6 +3,7 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -10,6 +11,18 @@
 namespace
 {
     constexpr const char* LOG_TAG = "ATLAS";
+
+    struct Vertex
+    {
+        float position[2];
+        float color[3];
+    };
+
+    constexpr Vertex TRIANGLE_VERTICES[] = {
+        {{ 0.0f, -0.6f}, {1.0f, 0.2f, 0.2f}},
+        {{ 0.6f,  0.6f}, {0.2f, 1.0f, 0.2f}},
+        {{-0.6f,  0.6f}, {0.2f, 0.4f, 1.0f}}
+    };
 
     void logInfo(const char* message)
     {
@@ -148,6 +161,7 @@ bool VulkanRenderer::initialize(
         !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
         !createFramebuffers() ||
+        !createVertexBuffer() ||
         !createCommandResources() ||
         !createSyncObjects())
     {
@@ -779,11 +793,32 @@ bool VulkanRenderer::createGraphicsPipeline(
         fragmentStage
     };
 
-    // Данные вершин пока зашиты в вершинный шейдер,
-    // поэтому отдельный буфер вершин не нужен.
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(Vertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attributes[2]{};
+
+    // location = 0: позиция из двух чисел float.
+    attributes[0].location = 0;
+    attributes[0].binding = 0;
+    attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[0].offset = offsetof(Vertex, position);
+
+    // location = 1: цвет из трёх чисел float.
+    attributes[1].location = 1;
+    attributes[1].binding = 0;
+    attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributes[1].offset = offsetof(Vertex, color);
+
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType =
@@ -974,6 +1009,134 @@ bool VulkanRenderer::createFramebuffers()
     return true;
 }
 
+bool VulkanRenderer::createVertexBuffer()
+{
+    const VkDeviceSize bufferSize = sizeof(TRIANGLE_VERTICES);
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (!checkResult(
+            vkCreateBuffer(
+                device_,
+                &bufferInfo,
+                nullptr,
+                &vertexBuffer_
+            ),
+            "vkCreateBuffer"
+        ))
+    {
+        return false;
+    }
+
+    VkMemoryRequirements requirements{};
+
+    vkGetBufferMemoryRequirements(
+        device_,
+        vertexBuffer_,
+        &requirements
+    );
+
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+
+    vkGetPhysicalDeviceMemoryProperties(
+        physicalDevice_,
+        &memoryProperties
+    );
+
+    const VkMemoryPropertyFlags requiredFlags =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+    uint32_t memoryTypeIndex = UINT32_MAX;
+
+    for (uint32_t i = 0;
+         i < memoryProperties.memoryTypeCount;
+         ++i)
+    {
+        const bool supportedByBuffer =
+            (requirements.memoryTypeBits & (1u << i)) != 0;
+
+        const bool hasRequiredFlags =
+            (memoryProperties.memoryTypes[i].propertyFlags &
+             requiredFlags) == requiredFlags;
+
+        if (supportedByBuffer && hasRequiredFlags)
+        {
+            memoryTypeIndex = i;
+            break;
+        }
+    }
+
+    if (memoryTypeIndex == UINT32_MAX)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: подходящий тип памяти для вершин не найден."
+        );
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocateInfo{};
+    allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocateInfo.allocationSize = requirements.size;
+    allocateInfo.memoryTypeIndex = memoryTypeIndex;
+
+    if (!checkResult(
+            vkAllocateMemory(
+                device_,
+                &allocateInfo,
+                nullptr,
+                &vertexBufferMemory_
+            ),
+            "vkAllocateMemory для вершин"
+        ))
+    {
+        return false;
+    }
+
+    if (!checkResult(
+            vkBindBufferMemory(
+                device_,
+                vertexBuffer_,
+                vertexBufferMemory_,
+                0
+            ),
+            "vkBindBufferMemory"
+        ))
+    {
+        return false;
+    }
+
+    void* mappedMemory = nullptr;
+
+    if (!checkResult(
+            vkMapMemory(
+                device_,
+                vertexBufferMemory_,
+                0,
+                bufferSize,
+                0,
+                &mappedMemory
+            ),
+            "vkMapMemory для вершин"
+        ))
+    {
+        return false;
+    }
+
+    std::memcpy(mappedMemory, TRIANGLE_VERTICES, sizeof(TRIANGLE_VERTICES));
+
+    vkUnmapMemory(device_, vertexBufferMemory_);
+
+    logInfo("Vulkan: буфер вершин создан и заполнен.");
+    return true;
+}
+
 bool VulkanRenderer::createCommandResources()
 {
     VkCommandPoolCreateInfo poolInfo{};
@@ -1053,6 +1216,17 @@ bool VulkanRenderer::createCommandResources()
             commandBuffers_[i],
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             graphicsPipeline_
+        );
+
+        const VkBuffer vertexBuffers[] = {vertexBuffer_};
+        const VkDeviceSize offsets[] = {0};
+
+        vkCmdBindVertexBuffers(
+            commandBuffers_[i],
+            0,
+            1,
+            vertexBuffers,
+            offsets
         );
 
         // Три вершины, один экземпляр.
@@ -1238,6 +1412,18 @@ void VulkanRenderer::shutdown()
         }
 
         commandBuffers_.clear();
+
+        if (vertexBuffer_ != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(device_, vertexBuffer_, nullptr);
+            vertexBuffer_ = VK_NULL_HANDLE;
+        }
+
+        if (vertexBufferMemory_ != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device_, vertexBufferMemory_, nullptr);
+            vertexBufferMemory_ = VK_NULL_HANDLE;
+        }
 
         if (graphicsPipeline_ != VK_NULL_HANDLE)
         {
