@@ -18,11 +18,68 @@ namespace
         float color[3];
     };
 
-    constexpr Vertex TRIANGLE_VERTICES[] = {
-        {{ 0.0f, -0.6f, 0.0f}, {1.0f, 0.2f, 0.2f}},
-        {{ 0.6f,  0.6f, 0.0f}, {0.2f, 1.0f, 0.2f}},
-        {{-0.6f,  0.6f, 0.0f}, {0.2f, 0.4f, 1.0f}}
+    // Тестовый куб: 6 граней, на каждой по 2 треугольника.
+    // Координаты X и Y пока уже подготовлены для вывода на экран.
+    // Z хранится в вершинах, но проверка глубины ещё не включена.
+    constexpr Vertex CUBE_VERTICES[] = {
+        // Задняя грань — тёмно-синяя
+        {{-0.45f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        {{ 0.55f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+
+        {{-0.45f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        {{-0.45f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+
+        // Левая грань — красная
+        {{-0.65f, -0.55f, 0.3f}, {0.65f, 0.20f, 0.20f}},
+        {{-0.45f, -0.35f, 0.7f}, {0.65f, 0.20f, 0.20f}},
+        {{-0.45f,  0.65f, 0.7f}, {0.65f, 0.20f, 0.20f}},
+
+        {{-0.65f, -0.55f, 0.3f}, {0.65f, 0.20f, 0.20f}},
+        {{-0.45f,  0.65f, 0.7f}, {0.65f, 0.20f, 0.20f}},
+        {{-0.65f,  0.45f, 0.3f}, {0.65f, 0.20f, 0.20f}},
+
+        // Верхняя грань — светло-синяя
+        {{-0.65f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.35f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.55f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
+
+        {{-0.65f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.55f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
+        {{-0.45f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
+
+        // Правая грань — оранжевая
+        {{ 0.35f, -0.55f, 0.3f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.55f, -0.35f, 0.7f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.90f, 0.45f, 0.15f}},
+
+        {{ 0.35f, -0.55f, 0.3f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.35f,  0.45f, 0.3f}, {0.90f, 0.45f, 0.15f}},
+
+        // Нижняя грань — фиолетовая
+        {{-0.65f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.35f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
+
+        {{-0.65f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.55f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
+        {{-0.45f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
+
+        // Передняя грань — зелёная.
+        // Рисуем её последней, так как depth test пока отсутствует.
+        {{-0.65f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.35f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.35f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+
+        {{-0.65f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.35f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+        {{-0.65f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}}
     };
+
+    constexpr uint32_t CUBE_VERTEX_COUNT =
+        sizeof(CUBE_VERTICES) / sizeof(CUBE_VERTICES[0]);
 
     void logInfo(const char* message)
     {
@@ -1011,7 +1068,7 @@ bool VulkanRenderer::createFramebuffers()
 
 bool VulkanRenderer::createVertexBuffer()
 {
-    const VkDeviceSize bufferSize = sizeof(TRIANGLE_VERTICES);
+    const VkDeviceSize bufferSize = sizeof(CUBE_VERTICES);
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1129,7 +1186,7 @@ bool VulkanRenderer::createVertexBuffer()
         return false;
     }
 
-    std::memcpy(mappedMemory, TRIANGLE_VERTICES, sizeof(TRIANGLE_VERTICES));
+    std::memcpy(mappedMemory, CUBE_VERTICES, sizeof(CUBE_VERTICES));
 
     vkUnmapMemory(device_, vertexBufferMemory_);
 
@@ -1232,7 +1289,7 @@ bool VulkanRenderer::createCommandResources()
         // Три вершины, один экземпляр.
         vkCmdDraw(
             commandBuffers_[i],
-            3,
+            CUBE_VERTEX_COUNT,
             1,
             0,
             0
