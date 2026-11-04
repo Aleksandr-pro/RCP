@@ -59,23 +59,8 @@ void main()
         rotated.y * scale
     );
 
-    // Поворот изображения в соответствии с трансформацией поверхности.
+    // Ориентацию поверхности для этого теста обрабатывает система.
     vec2 bufferXY = screenXY;
-
-    if (pushConstants.rotation > 0.5 &&
-        pushConstants.rotation < 1.5)
-    {
-        bufferXY = vec2(-screenXY.y, screenXY.x);
-    }
-    else if (pushConstants.rotation > 1.5 &&
-             pushConstants.rotation < 2.5)
-    {
-        bufferXY = -screenXY;
-    }
-    else if (pushConstants.rotation > 2.5)
-    {
-        bufferXY = vec2(screenXY.y, -screenXY.x);
-    }
 
     gl_Position = vec4(
         bufferXY,

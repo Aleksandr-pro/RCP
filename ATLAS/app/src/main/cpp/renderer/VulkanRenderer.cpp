@@ -580,17 +580,34 @@ bool VulkanRenderer::createSwapchain()
     info.imageArrayLayers = 1;
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    surfaceTransform_ = capabilities.currentTransform;
+    if ((capabilities.supportedTransforms &
+         VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: identity transform не поддерживается. "
+            "currentTransform=%u, supportedTransforms=%u",
+            static_cast<unsigned>(capabilities.currentTransform),
+            static_cast<unsigned>(capabilities.supportedTransforms)
+        );
+
+        return false;
+    }
+
+    surfaceTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     info.preTransform = surfaceTransform_;
 
     __android_log_print(
         ANDROID_LOG_INFO,
         LOG_TAG,
-        "Vulkan: transform=%u, swapchain=%ux%u",
-        static_cast<unsigned>(surfaceTransform_),
+        "Vulkan: currentTransform=%u, выбран identity, swapchain=%ux%u",
+        static_cast<unsigned>(capabilities.currentTransform),
         swapchainExtent_.width,
         swapchainExtent_.height
     );
+
+
     info.compositeAlpha = compositeAlpha;
 
     // FIFO обязателен для реализации Vulkan с поддержкой swapchain.
@@ -1534,49 +1551,12 @@ bool VulkanRenderer::createCommandResources()
             graphicsPipeline_
         );
 
-        float rotation = 0.0f;
-        bool swapsWidthAndHeight = false;
-
-        switch (surfaceTransform_)
-        {
-            case VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR:
-                rotation = 1.0f;
-                swapsWidthAndHeight = true;
-                break;
-
-            case VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR:
-                rotation = 2.0f;
-                break;
-
-            case VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR:
-                rotation = 3.0f;
-                swapsWidthAndHeight = true;
-                break;
-
-            case VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR:
-                break;
-
-            default:
-                __android_log_print(
-                    ANDROID_LOG_WARN,
-                    LOG_TAG,
-                    "Vulkan: неподдерживаемая трансформация поверхности: %u",
-                    static_cast<unsigned>(surfaceTransform_)
-                );
-                break;
-        }
-
         const float width = static_cast<float>(swapchainExtent_.width);
         const float height = static_cast<float>(swapchainExtent_.height);
 
-        // При повороте на 90° или 270° видимые ширина и высота меняются местами.
-        const float displayAspect = swapsWidthAndHeight
-            ? height / width
-            : width / height;
-
         const float pushConstants[2] = {
-            displayAspect,
-            rotation
+            width / height,
+            0.0f
         };
 
         vkCmdPushConstants(
@@ -1586,6 +1566,13 @@ bool VulkanRenderer::createCommandResources()
             0,
             sizeof(pushConstants),
             pushConstants
+        );
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "Vulkan: aspect буфера = %.4f",
+            pushConstants[0]
         );
 
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
