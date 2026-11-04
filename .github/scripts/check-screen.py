@@ -31,7 +31,7 @@ x1 = max(p[0] for p in points)
 y0 = min(p[1] for p in points)
 y1 = max(p[1] for p in points)
 ratio = (x1 - x0 + 1) / (y1 - y0 + 1)
-assert 0.4 < ratio < 2.5, f"Unexpected figure proportions: {ratio}"
+assert 0.4 < ratio < 2.5, f"Unexpected figure proportions: {ratio}, bounds={(x0, y0, x1, y1)}, image={(width, height)}, pixels={len(points)}, colors={colors}"
 metrics = {"screen_width": width, "screen_height": height, "ratio": ratio}
 Path(f"{sys.argv[2]}.json").write_text(json.dumps(metrics))
 print(f"Colored figure found: {len(points)} pixels, width/height={ratio:.3f}")
