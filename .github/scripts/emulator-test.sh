@@ -19,7 +19,12 @@ package=com.atlas.engine
 check_screen() {
   adb shell screencap -p /sdcard/atlas.png
   adb pull /sdcard/atlas.png atlas-screen.png
-  python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}"
+  if ! python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}" > screen-check.log 2>&1; then
+    detail=$(tail -n 5 screen-check.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+    echo "::error title=Image check::$detail"
+    return 1
+  fi
+  cat screen-check.log
 }
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
