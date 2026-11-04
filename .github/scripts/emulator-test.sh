@@ -27,6 +27,17 @@ check_screen() {
     fi
     sleep 2
   done
+  python3 - <<'PYIMAGE'
+from PIL import Image
+import base64, io
+image = Image.open('atlas-screen.png').convert('RGB')
+image.thumbnail((320, 320))
+buffer = io.BytesIO()
+image.save(buffer, format='JPEG', quality=30, optimize=True)
+encoded = base64.b64encode(buffer.getvalue()).decode()
+for i in range(0, len(encoded), 1500):
+    print(f'::notice title=screen-part-{i // 1500}::{encoded[i:i+1500]}')
+PYIMAGE
   detail=$(tail -n 5 screen-check.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=Image check::$detail"
   return 1
