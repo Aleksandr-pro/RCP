@@ -5,7 +5,7 @@ from PIL import Image
 
 if sys.argv[1] == "--compare":
     portrait = json.loads(Path("portrait.json").read_text())
-    landscape = json.loads(Path("landscape.json").read_text())
+    landscape = json.loads(Path(f"{sys.argv[2] if len(sys.argv) > 2 else 'landscape'}.json").read_text())
     assert portrait["screen_width"] < portrait["screen_height"], portrait
     assert landscape["screen_width"] > landscape["screen_height"], landscape
     difference = abs(portrait["ratio"] - landscape["ratio"]) / max(portrait["ratio"], landscape["ratio"])
