@@ -4,7 +4,7 @@
     <application
         android:allowBackup="false"
         android:hasCode="false"
-        android:label="ATLAS 0.6b"
+        android:label="ATLAS 0.6d"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity

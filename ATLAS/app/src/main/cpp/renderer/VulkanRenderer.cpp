@@ -214,6 +214,7 @@ bool VulkanRenderer::initialize(
         !selectPhysicalDevice() ||
         !createDevice() ||
         !createSwapchain() ||
+        !createDepthResources() ||
         !createRenderPass() ||
         !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
@@ -644,41 +645,258 @@ bool VulkanRenderer::createSwapchain()
     return true;
 }
 
+bool VulkanRenderer::createDepthResources()
+{
+    // Выбираем формат, который устройство поддерживает
+    // для использования в качестве буфера глубины.
+    const VkFormat candidates[] = {
+        VK_FORMAT_D32_SFLOAT,
+        VK_FORMAT_D16_UNORM
+    };
+
+    depthFormat_ = VK_FORMAT_UNDEFINED;
+
+    for (VkFormat candidate : candidates)
+    {
+        VkFormatProperties properties{};
+
+        vkGetPhysicalDeviceFormatProperties(
+            physicalDevice_,
+            candidate,
+            &properties
+        );
+
+        if ((properties.optimalTilingFeatures &
+             VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0)
+        {
+            depthFormat_ = candidate;
+            break;
+        }
+    }
+
+    if (depthFormat_ == VK_FORMAT_UNDEFINED)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: подходящий формат глубины не найден."
+        );
+        return false;
+    }
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = depthFormat_;
+    imageInfo.extent.width = swapchainExtent_.width;
+    imageInfo.extent.height = swapchainExtent_.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (!checkResult(
+            vkCreateImage(
+                device_,
+                &imageInfo,
+                nullptr,
+                &depthImage_
+            ),
+            "vkCreateImage для глубины"
+        ))
+    {
+        return false;
+    }
+
+    VkMemoryRequirements requirements{};
+
+    vkGetImageMemoryRequirements(
+        device_,
+        depthImage_,
+        &requirements
+    );
+
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+
+    vkGetPhysicalDeviceMemoryProperties(
+        physicalDevice_,
+        &memoryProperties
+    );
+
+    uint32_t memoryTypeIndex = UINT32_MAX;
+
+    // Предпочитаем память устройства.
+    for (uint32_t i = 0;
+         i < memoryProperties.memoryTypeCount;
+         ++i)
+    {
+        const bool supported =
+            (requirements.memoryTypeBits & (1u << i)) != 0;
+
+        const bool deviceLocal =
+            (memoryProperties.memoryTypes[i].propertyFlags &
+             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+
+        if (supported && deviceLocal)
+        {
+            memoryTypeIndex = i;
+            break;
+        }
+    }
+
+    // Если такой тип не найден, используем любой допустимый.
+    if (memoryTypeIndex == UINT32_MAX)
+    {
+        for (uint32_t i = 0;
+             i < memoryProperties.memoryTypeCount;
+             ++i)
+        {
+            if ((requirements.memoryTypeBits & (1u << i)) != 0)
+            {
+                memoryTypeIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (memoryTypeIndex == UINT32_MAX)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: тип памяти для буфера глубины не найден."
+        );
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocationInfo{};
+    allocationInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocationInfo.allocationSize = requirements.size;
+    allocationInfo.memoryTypeIndex = memoryTypeIndex;
+
+    if (!checkResult(
+            vkAllocateMemory(
+                device_,
+                &allocationInfo,
+                nullptr,
+                &depthMemory_
+            ),
+            "vkAllocateMemory для глубины"
+        ))
+    {
+        return false;
+    }
+
+    if (!checkResult(
+            vkBindImageMemory(
+                device_,
+                depthImage_,
+                depthMemory_,
+                0
+            ),
+            "vkBindImageMemory для глубины"
+        ))
+    {
+        return false;
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = depthImage_;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = depthFormat_;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (!checkResult(
+            vkCreateImageView(
+                device_,
+                &viewInfo,
+                nullptr,
+                &depthImageView_
+            ),
+            "vkCreateImageView для глубины"
+        ))
+    {
+        return false;
+    }
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        LOG_TAG,
+        "Vulkan: буфер глубины создан, формат %d.",
+        static_cast<int>(depthFormat_)
+    );
+
+    return true;
+}
+
 bool VulkanRenderer::createRenderPass()
 {
-    VkAttachmentDescription attachment{};
-    attachment.format = swapchainFormat_;
-    attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    VkAttachmentDescription attachments[2]{};
+
+    // 0: цветное изображение swapchain.
+    attachments[0].format = swapchainFormat_;
+    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    // 1: буфер глубины.
+    attachments[1].format = depthFormat_;
+    attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    attachments[1].finalLayout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference colorReference{};
     colorReference.attachment = 0;
     colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentReference depthReference{};
+    depthReference.attachment = 1;
+    depthReference.layout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorReference;
+    subpass.pDepthStencilAttachment = &depthReference;
 
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
     dependency.srcStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+        VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependency.dstStageMask =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.srcAccessMask = 0;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkRenderPassCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.attachmentCount = 1;
-    info.pAttachments = &attachment;
+    info.attachmentCount = 2;
+    info.pAttachments = attachments;
     info.subpassCount = 1;
     info.pSubpasses = &subpass;
     info.dependencyCount = 1;
@@ -937,8 +1155,15 @@ bool VulkanRenderer::createGraphicsPipeline(
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorAttachment;
 
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(float);
+
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstantRange;
 
     VkResult result = vkCreatePipelineLayout(
         device_,
@@ -956,6 +1181,17 @@ bool VulkanRenderer::createGraphicsPipeline(
         return false;
     }
 
+    VkPipelineDepthStencilStateCreateInfo depthState{};
+    depthState.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+
+    depthState.depthTestEnable = VK_TRUE;
+    depthState.depthWriteEnable = VK_TRUE;
+    depthState.depthCompareOp = VK_COMPARE_OP_LESS;
+
+    depthState.depthBoundsTestEnable = VK_FALSE;
+    depthState.stencilTestEnable = VK_FALSE;
+
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.stageCount = 2;
@@ -965,6 +1201,7 @@ bool VulkanRenderer::createGraphicsPipeline(
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthState;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.layout = pipelineLayout_;
     pipelineInfo.renderPass = renderPass_;
@@ -1043,8 +1280,13 @@ bool VulkanRenderer::createFramebuffers()
         VkFramebufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         info.renderPass = renderPass_;
-        info.attachmentCount = 1;
-        info.pAttachments = &imageViews_[i];
+        const VkImageView attachments[] = {
+            imageViews_[i],
+            depthImageView_
+        };
+
+        info.attachmentCount = 2;
+        info.pAttachments = attachments;
         info.width = swapchainExtent_.width;
         info.height = swapchainExtent_.height;
         info.layers = 1;
@@ -1248,11 +1490,17 @@ bool VulkanRenderer::createCommandResources()
             return false;
         }
 
-        VkClearValue clearColor{};
-        clearColor.color.float32[0] = 0.02f;
-        clearColor.color.float32[1] = 0.22f;
-        clearColor.color.float32[2] = 0.12f;
-        clearColor.color.float32[3] = 1.0f;
+        VkClearValue clearValues[2]{};
+
+        // Цвет фона.
+        clearValues[0].color.float32[0] = 0.02f;
+        clearValues[0].color.float32[1] = 0.22f;
+        clearValues[0].color.float32[2] = 0.12f;
+        clearValues[0].color.float32[3] = 1.0f;
+
+        // Самая дальняя глубина в диапазоне Vulkan.
+        clearValues[1].depthStencil.depth = 1.0f;
+        clearValues[1].depthStencil.stencil = 0;
 
         VkRenderPassBeginInfo renderInfo{};
         renderInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1260,8 +1508,8 @@ bool VulkanRenderer::createCommandResources()
         renderInfo.framebuffer = framebuffers_[i];
         renderInfo.renderArea.offset = {0, 0};
         renderInfo.renderArea.extent = swapchainExtent_;
-        renderInfo.clearValueCount = 1;
-        renderInfo.pClearValues = &clearColor;
+        renderInfo.clearValueCount = 2;
+        renderInfo.pClearValues = clearValues;
 
         vkCmdBeginRenderPass(
             commandBuffers_[i],
@@ -1273,6 +1521,19 @@ bool VulkanRenderer::createCommandResources()
             commandBuffers_[i],
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             graphicsPipeline_
+        );
+
+        const float aspectRatio =
+            static_cast<float>(swapchainExtent_.width) /
+            static_cast<float>(swapchainExtent_.height);
+
+        vkCmdPushConstants(
+            commandBuffers_[i],
+            pipelineLayout_,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(aspectRatio),
+            &aspectRatio
         );
 
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
@@ -1503,6 +1764,26 @@ void VulkanRenderer::shutdown()
         }
 
         framebuffers_.clear();
+
+        if (depthImageView_ != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device_, depthImageView_, nullptr);
+            depthImageView_ = VK_NULL_HANDLE;
+        }
+
+        if (depthImage_ != VK_NULL_HANDLE)
+        {
+            vkDestroyImage(device_, depthImage_, nullptr);
+            depthImage_ = VK_NULL_HANDLE;
+        }
+
+        if (depthMemory_ != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device_, depthMemory_, nullptr);
+            depthMemory_ = VK_NULL_HANDLE;
+        }
+
+        depthFormat_ = VK_FORMAT_UNDEFINED;
 
         for (VkImageView imageView : imageViews_)
         {
