@@ -1,4 +1,5 @@
 #include <android/log.h>
+#include <android/native_window.h>
 #include <android_native_app_glue.h>
 
 #include "renderer/VulkanRenderer.h"
@@ -45,6 +46,14 @@ namespace
         }
 
         logInfo("ATLAS: создание Vulkan-рендерера.");
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "ATLAS: native window=%dx%d",
+            ANativeWindow_getWidth(app->window),
+            ANativeWindow_getHeight(app->window)
+        );
 
         if (!state->renderer.initialize(
                 app->window,

@@ -59,25 +59,22 @@ void main()
         rotated.y * scale
     );
 
-    // Обратный поворот: компенсируем поворот поверхности при выводе.
+    // Поворот изображения в соответствии с трансформацией поверхности.
     vec2 bufferXY = screenXY;
 
     if (pushConstants.rotation > 0.5 &&
         pushConstants.rotation < 1.5)
     {
-        // Обратный поворот для 90°.
-        bufferXY = vec2(screenXY.y, -screenXY.x);
+        bufferXY = vec2(-screenXY.y, screenXY.x);
     }
     else if (pushConstants.rotation > 1.5 &&
              pushConstants.rotation < 2.5)
     {
-        // Обратный поворот для 180°.
         bufferXY = -screenXY;
     }
     else if (pushConstants.rotation > 2.5)
     {
-        // Обратный поворот для 270°.
-        bufferXY = vec2(-screenXY.y, screenXY.x);
+        bufferXY = vec2(screenXY.y, -screenXY.x);
     }
 
     gl_Position = vec4(
