@@ -38,6 +38,7 @@ private:
     bool selectPhysicalDevice();
     bool createDevice();
     bool createSwapchain();
+    bool createDepthResources();
     bool createRenderPass();
     bool createGraphicsPipeline(AAssetManager* assetManager);
 
@@ -69,6 +70,11 @@ private:
     std::vector<VkImageView> imageViews_;
     std::vector<VkFramebuffer> framebuffers_;
     std::vector<VkCommandBuffer> commandBuffers_;
+
+    VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
+    VkImage depthImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory depthMemory_ = VK_NULL_HANDLE;
+    VkImageView depthImageView_ = VK_NULL_HANDLE;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;

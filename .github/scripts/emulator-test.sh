@@ -58,6 +58,7 @@ grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
+grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 check_screen portrait
 adb shell input keyevent KEYCODE_HOME
 sleep 3
