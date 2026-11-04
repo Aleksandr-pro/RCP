@@ -5,7 +5,7 @@ package=com.atlas.engine
 check_screen() {
   adb shell screencap -p /sdcard/atlas.png
   adb pull /sdcard/atlas.png atlas-screen.png
-  python3 .github/scripts/check-screen.py atlas-screen.png
+  python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}"
 }
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
@@ -23,7 +23,7 @@ grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
-check_screen
+check_screen portrait
 adb shell input keyevent KEYCODE_HOME
 sleep 3
 adb shell am start -n "$package/android.app.NativeActivity"
@@ -32,7 +32,8 @@ check_screen
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 sleep 5
-check_screen
+check_screen landscape
+python3 .github/scripts/check-screen.py --compare
 adb shell settings put system user_rotation 0
 sleep 5
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt

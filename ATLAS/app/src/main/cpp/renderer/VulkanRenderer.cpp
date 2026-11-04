@@ -937,8 +937,15 @@ bool VulkanRenderer::createGraphicsPipeline(
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorAttachment;
 
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(float);
+
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstantRange;
 
     VkResult result = vkCreatePipelineLayout(
         device_,
@@ -1273,6 +1280,19 @@ bool VulkanRenderer::createCommandResources()
             commandBuffers_[i],
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             graphicsPipeline_
+        );
+
+        const float aspectRatio =
+            static_cast<float>(swapchainExtent_.width) /
+            static_cast<float>(swapchainExtent_.height);
+
+        vkCmdPushConstants(
+            commandBuffers_[i],
+            pipelineLayout_,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(aspectRatio),
+            &aspectRatio
         );
 
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
