@@ -128,5 +128,6 @@ jobs:
           name: emulator-diagnostics
           path: |
             atlas-log.txt
+            atlas-system-log.txt
             atlas-screen.png
           if-no-files-found: ignore

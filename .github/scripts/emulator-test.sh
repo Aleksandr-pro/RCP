@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
-trap 'status=$?; if [ "$status" -ne 0 ]; then echo "::error::Emulator test failed on line $LINENO (exit $status)"; if [ -f atlas-log.txt ]; then tail -n 30 atlas-log.txt | while IFS= read -r line; do echo "::notice::$line"; done; fi; fi' EXIT
+report_failure() {
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "::error::Emulator test failed (exit $status)"
+    adb logcat -d -v brief -t 3000 > atlas-system-log.txt || true
+    { grep -iE 'fatal|crash|signal|atlas|vulkan|shader|error|exception|tombstone' atlas-system-log.txt || true; } | tail -n 55 | while IFS= read -r line; do echo "::notice::$line"; done
+    echo "::notice::App PID: $(adb shell pidof com.atlas.engine || true)"
+  fi
+}
+trap report_failure EXIT
 package=com.atlas.engine
 check_screen() {
   adb shell screencap -p /sdcard/atlas.png
