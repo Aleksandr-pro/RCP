@@ -14,14 +14,14 @@ namespace
 
     struct Vertex
     {
-        float position[2];
+        float position[3];
         float color[3];
     };
 
     constexpr Vertex TRIANGLE_VERTICES[] = {
-        {{ 0.0f, -0.6f}, {1.0f, 0.2f, 0.2f}},
-        {{ 0.6f,  0.6f}, {0.2f, 1.0f, 0.2f}},
-        {{-0.6f,  0.6f}, {0.2f, 0.4f, 1.0f}}
+        {{ 0.0f, -0.6f, 0.0f}, {1.0f, 0.2f, 0.2f}},
+        {{ 0.6f,  0.6f, 0.0f}, {0.2f, 1.0f, 0.2f}},
+        {{-0.6f,  0.6f, 0.0f}, {0.2f, 0.4f, 1.0f}}
     };
 
     void logInfo(const char* message)
@@ -800,10 +800,10 @@ bool VulkanRenderer::createGraphicsPipeline(
 
     VkVertexInputAttributeDescription attributes[2]{};
 
-    // location = 0: позиция из двух чисел float.
+    // location = 0: позиция из трёх чисел float.
     attributes[0].location = 0;
     attributes[0].binding = 0;
-    attributes[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributes[0].offset = offsetof(Vertex, position);
 
     // location = 1: цвет из трёх чисел float.
