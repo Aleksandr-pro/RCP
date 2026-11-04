@@ -36,6 +36,10 @@ check_screen
 adb shell settings put system user_rotation 0
 sleep 5
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
+if grep -E 'vkCreateBuffer: ошибка|vkAllocateMemory для вершин: ошибка|vkMapMemory для вершин: ошибка' atlas-log.txt; then
+  echo 'Vertex buffer Vulkan error found' >&2
+  exit 1
+fi
 grep -q 'приложение приостановлено' atlas-log.txt
 [ "$(grep -c 'приложение активно' atlas-log.txt)" -ge 2 ]
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
