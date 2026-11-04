@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "::error::Test failed at line $LINENO: $BASH_COMMAND"' ERR
 report_failure() {
   status=$?
   if [ "$status" -ne 0 ]; then
     echo "::error::Emulator test failed (exit $status)"
     adb logcat -d -v brief -t 3000 > atlas-system-log.txt || true
+    if [ -f atlas-log.txt ]; then
+      summary=$(tail -n 35 atlas-log.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+      echo "::notice title=ATLAS log::$summary"
+    fi
     { grep -iE 'fatal|crash|signal|atlas|vulkan|shader|error|exception|tombstone' atlas-system-log.txt || true; } | tail -n 55 | while IFS= read -r line; do echo "::notice::$line"; done
     echo "::notice::App PID: $(adb shell pidof com.atlas.engine || true)"
   fi
