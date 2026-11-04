@@ -67,7 +67,18 @@ check_screen
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 sleep 5
-check_screen landscape
+if ! check_screen landscape; then
+  echo '::warning::Checking whether a fresh landscape launch changes the result'
+  adb shell am force-stop "$package"
+  adb shell am start -n "$package/android.app.NativeActivity"
+  sleep 5
+  if check_screen landscape-restart; then
+    echo '::warning::Image check passes after a fresh landscape launch, but fails after rotation'
+  else
+    echo '::warning::Image check also fails after a fresh landscape launch'
+  fi
+  exit 1
+fi
 python3 .github/scripts/check-screen.py --compare
 adb shell settings put system user_rotation 0
 sleep 5
