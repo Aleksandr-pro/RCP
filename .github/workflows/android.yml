@@ -33,7 +33,14 @@ jobs:
           done
       - name: Build debug APK
         working-directory: ATLAS
-        run: ./gradlew assembleDebug
+        run: |
+          if ! ./gradlew assembleDebug > "$RUNNER_TEMP/atlas-build.log" 2>&1; then
+            tail -n 40 "$RUNNER_TEMP/atlas-build.log" | while IFS= read -r line; do
+              echo "::notice::$line"
+            done
+            echo '::error::Android APK build failed; see notices above'
+            exit 1
+          fi
       - name: Verify APK contains shader assets
         run: |
           python3 - <<'PYCODE'
