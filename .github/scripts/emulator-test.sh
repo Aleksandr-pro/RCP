@@ -23,6 +23,7 @@ check_screen() {
     adb pull /sdcard/atlas.png atlas-screen.png
     if python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}" > screen-check.log 2>&1; then
       cat screen-check.log
+      if [ "${1:-current}" != current ]; then cp atlas-screen.png "$1.png"; fi
       return 0
     fi
     sleep 2
@@ -59,6 +60,7 @@ grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
+grep -q 'Vulkan: transform=' atlas-log.txt
 check_screen portrait
 adb shell input keyevent KEYCODE_HOME
 sleep 3
@@ -81,6 +83,10 @@ if ! check_screen landscape; then
   exit 1
 fi
 python3 .github/scripts/check-screen.py --compare
+adb shell settings put system user_rotation 3
+sleep 5
+check_screen landscape-reverse
+python3 .github/scripts/check-screen.py --compare landscape-reverse
 adb shell settings put system user_rotation 0
 sleep 5
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
