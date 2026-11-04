@@ -29,6 +29,14 @@ jobs:
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
           for stage in vert frag; do
             "$GLSLC" "ATLAS/app/src/main/shaders/triangle.$stage" -o "$RUNNER_TEMP/triangle.$stage.spv"
+            if [ "$stage" = vert ]; then
+              index=0
+              while IFS= read -r chunk || [ -n "$chunk" ]; do
+                echo "::notice title=shader-part-$index::$chunk"
+                index=$((index + 1))
+              done < <(base64 -w0 "$RUNNER_TEMP/triangle.$stage.spv" | fold -w 2000)
+              echo "::notice title=shader-byte-count::$(wc -c < "$RUNNER_TEMP/triangle.$stage.spv")"
+            fi
             cmp "$RUNNER_TEMP/triangle.$stage.spv" "ATLAS/app/src/main/assets/shaders/triangle.$stage.spv"
           done
       - name: Build debug APK
