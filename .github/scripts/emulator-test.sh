@@ -112,7 +112,8 @@ adb shell am force-stop "$package"
 # Check all engine error-level logs, including Vulkan failures.
 adb logcat -d -s ATLAS:E '*:S' > atlas-errors.txt
 if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-errors.txt; then
-  cat atlas-errors.txt
+  summary=$(tail -n 30 atlas-errors.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=ATLAS error log::$summary"
   echo '::error::ATLAS reported error-level messages during the emulator test'
   exit 1
 fi
