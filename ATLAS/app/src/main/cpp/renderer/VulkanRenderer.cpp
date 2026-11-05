@@ -1586,14 +1586,18 @@ bool VulkanRenderer::createCommandResources()
             offsets
         );
 
-        // Три вершины, один экземпляр.
-        vkCmdDraw(
-            commandBuffers_[i],
-            CUBE_VERTEX_COUNT,
-            1,
-            0,
-            0
-        );
+        // Тест глубины: рисуем шесть граней в обратном порядке.
+        // Каждая грань содержит шесть вершин.
+        for (int face = 5; face >= 0; --face)
+        {
+            vkCmdDraw(
+                commandBuffers_[i],
+                6,                              // Вершин на грань
+                1,                              // Один экземпляр
+                static_cast<uint32_t>(face * 6), // Первая вершина грани
+                0
+            );
+        }
 
         vkCmdEndRenderPass(commandBuffers_[i]);
 
