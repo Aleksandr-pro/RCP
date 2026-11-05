@@ -13,13 +13,7 @@ layout(push_constant) uniform PushConstants
 
 void main()
 {
-    // Временное преобразование тестовых вершин из версии 0.6b.
-    float depthOffset = inPosition.z - 0.3;
-
-    vec3 position;
-    position.x = inPosition.x - 0.5 * depthOffset + 0.15;
-    position.y = inPosition.y - 0.5 * depthOffset + 0.05;
-    position.z = (inPosition.z - 0.5) * 2.5;
+    vec3 position = inPosition;
 
     float angleY = 0.55;
     float cosY = cos(angleY);
