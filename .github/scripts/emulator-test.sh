@@ -109,3 +109,10 @@ adb shell am start -n "$package/android.app.NativeActivity"
 sleep 5
 check_screen
 adb shell am force-stop "$package"
+# Check all engine error-level logs, including Vulkan failures.
+adb logcat -d -s ATLAS:E '*:S' > atlas-errors.txt
+if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-errors.txt; then
+  cat atlas-errors.txt
+  echo '::error::ATLAS reported error-level messages during the emulator test'
+  exit 1
+fi
