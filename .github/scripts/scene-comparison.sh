@@ -15,6 +15,14 @@ w, h = Image.open(sys.argv[1]).size
 assert (w < h) if sys.argv[2] == 'portrait' else (w > h), (w, h)
 PYORIENTATION
     then return 0; fi
+    if [ "$expected" = landscape ] && [ "$attempt" = 5 ]; then
+      # Some emulators start the launcher in portrait despite the rotation
+      # setting. Relaunch once and keep the dimension assertion mandatory.
+      adb shell am force-stop "$package"
+      adb shell settings put system accelerometer_rotation 0
+      adb shell settings put system user_rotation 1
+      adb shell am start -n "$package/.AtlasActivity"
+    fi
     sleep 2
   done
   echo "::error::Display did not reach $expected orientation"
@@ -100,3 +108,65 @@ if ! python3 .github/scripts/check-touch.py > scene-comparison/touch-check.txt 2
   exit 1
 fi
 cat scene-comparison/touch-check.txt
+
+# Inject genuine Android multi-pointer MotionEvents as the emulator shell user.
+adb push "$RUNNER_TEMP/pinch.jar" /data/local/tmp/atlas-pinch.jar >/dev/null
+pinch() {
+  adb shell CLASSPATH=/data/local/tmp/atlas-pinch.jar app_process /system/bin PinchInput "$1" "$2" "$3"
+}
+adb shell am force-stop "$package"
+adb shell settings put system user_rotation 0
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+wait_orientation portrait
+adb logcat -c
+adb exec-out screencap -p > scene-comparison/pinch-before.png
+pinch out 320 640
+sleep 2
+adb exec-out screencap -p > scene-comparison/pinch-near.png
+pinch in 320 640
+sleep 2
+adb exec-out screencap -p > scene-comparison/pinch-far.png
+adb logcat -d -s ATLAS:I ATLAS_PINCH_TEST:I '*:S' > scene-comparison/pinch-portrait-log.txt
+adb shell am force-stop "$package"
+adb shell input keyevent KEYCODE_HOME
+adb shell settings put system user_rotation 1
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 8
+wait_orientation landscape
+adb logcat -c
+pinch out 640 320
+# Backgrounding may terminate the shell injector with SIGKILL; handle that
+# expected status in the parent rather than emitting a misleading ERR annotation.
+( trap - ERR; pinch hold 640 320 ) &
+pinch_pid=$!
+sleep 1
+adb shell input keyevent KEYCODE_HOME
+# The OS may kill the shell input helper when HOME cancels the gesture.
+# Accept only that specific exit status; the logs below must still prove
+# that an active pinch was cancelled and that a new pinch works on resume.
+if wait "$pinch_pid"; then
+  echo 'Pinch helper finished after HOME'
+else
+  status=$?
+  if [ "$status" -ne 137 ]; then
+    echo "::error::Pinch helper failed unexpectedly (exit $status)"
+    exit "$status"
+  fi
+  echo '::notice::Pinch helper was stopped by Android while switching to HOME'
+fi
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+wait_orientation landscape
+pinch in 640 320
+sleep 2
+adb logcat -d -s ATLAS:I ATLAS_PINCH_TEST:I '*:S' > scene-comparison/pinch-landscape-log.txt
+if ! python3 .github/scripts/check-pinch.py > scene-comparison/pinch-check.txt 2>&1; then
+  detail=$(cat scene-comparison/pinch-check.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Pinch test::$detail"
+  grep 'ATLAS_PINCH_TEST' scene-comparison/pinch-landscape-log.txt | tail -n 25 | while IFS= read -r line; do echo "::notice::$line"; done
+  exit 1
+fi
+cat scene-comparison/pinch-check.txt

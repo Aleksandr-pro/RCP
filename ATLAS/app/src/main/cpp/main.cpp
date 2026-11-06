@@ -24,11 +24,17 @@ namespace
 
         float angle = 0.55f;
         float tiltAngle = -0.35f;
+        float cameraDistance = 3.0f;
 
         bool touchActive = false;
         int32_t activePointerId = -1;
         float lastTouchX = 0.0f;
         float lastTouchY = 0.0f;
+
+        bool pinchActive = false;
+        int32_t pinchPointerId1 = -1;
+        int32_t pinchPointerId2 = -1;
+        float lastPinchDistance = 0.0f;
 
         std::chrono::steady_clock::time_point lastFrameTime{};
         std::chrono::steady_clock::time_point nextFrameTime{};
@@ -322,7 +328,8 @@ namespace
 
         if (!state->renderer.updateRotation(
                 state->angle,
-                state->tiltAngle
+                state->tiltAngle,
+                state->cameraDistance
             ))
         {
             logError("ATLAS: не удалось обновить команды кадра.");
@@ -371,27 +378,125 @@ namespace
         }
 
         const int32_t action = AMotionEvent_getAction(event);
-        const int32_t actionMasked = action & AMOTION_EVENT_ACTION_MASK;
+        const int32_t actionMasked =
+            action & AMOTION_EVENT_ACTION_MASK;
+
+        const size_t pointerCount =
+            AMotionEvent_getPointerCount(event);
 
         switch (actionMasked)
         {
             case AMOTION_EVENT_ACTION_DOWN:
             {
+                state->pinchActive = false;
                 state->touchActive = true;
-                state->activePointerId = AMotionEvent_getPointerId(event, 0);
+
+                state->activePointerId =
+                    AMotionEvent_getPointerId(event, 0);
+
                 state->lastTouchX = AMotionEvent_getX(event, 0);
                 state->lastTouchY = AMotionEvent_getY(event, 0);
+
+                return 1;
+            }
+
+            case AMOTION_EVENT_ACTION_POINTER_DOWN:
+            {
+                if (pointerCount < 2)
+                {
+                    return 1;
+                }
+
+                // Для первой версии используем первые два пальца.
+                const float x1 = AMotionEvent_getX(event, 0);
+                const float y1 = AMotionEvent_getY(event, 0);
+                const float x2 = AMotionEvent_getX(event, 1);
+                const float y2 = AMotionEvent_getY(event, 1);
+
+                const float dx = x2 - x1;
+                const float dy = y2 - y1;
+
+                state->lastPinchDistance = std::sqrt(dx * dx + dy * dy);
+
+                state->pinchPointerId1 =
+                    AMotionEvent_getPointerId(event, 0);
+                state->pinchPointerId2 =
+                    AMotionEvent_getPointerId(event, 1);
+
+                state->pinchActive = state->lastPinchDistance > 1.0f;
+
+                // При масштабировании не вращаем сцену.
+                state->touchActive = false;
+                state->activePointerId = -1;
+
                 return 1;
             }
 
             case AMOTION_EVENT_ACTION_MOVE:
             {
+                if (state->pinchActive)
+                {
+                    int32_t index1 = -1;
+                    int32_t index2 = -1;
+
+                    for (size_t i = 0; i < pointerCount; ++i)
+                    {
+                        const int32_t id =
+                            AMotionEvent_getPointerId(event, i);
+
+                        if (id == state->pinchPointerId1)
+                        {
+                            index1 = static_cast<int32_t>(i);
+                        }
+
+                        if (id == state->pinchPointerId2)
+                        {
+                            index2 = static_cast<int32_t>(i);
+                        }
+                    }
+
+                    if (index1 < 0 || index2 < 0)
+                    {
+                        state->pinchActive = false;
+                        return 1;
+                    }
+
+                    const float x1 =
+                        AMotionEvent_getX(event, static_cast<size_t>(index1));
+                    const float y1 =
+                        AMotionEvent_getY(event, static_cast<size_t>(index1));
+                    const float x2 =
+                        AMotionEvent_getX(event, static_cast<size_t>(index2));
+                    const float y2 =
+                        AMotionEvent_getY(event, static_cast<size_t>(index2));
+
+                    const float dx = x2 - x1;
+                    const float dy = y2 - y1;
+                    const float distance = std::sqrt(dx * dx + dy * dy);
+
+                    if (distance > 1.0f &&
+                        state->lastPinchDistance > 1.0f)
+                    {
+                        // Пальцы расходятся → расстояние уменьшается.
+                        state->cameraDistance *=
+                            state->lastPinchDistance / distance;
+
+                        state->cameraDistance = std::clamp(
+                            state->cameraDistance,
+                            2.5f,
+                            10.0f
+                        );
+
+                        state->lastPinchDistance = distance;
+                    }
+
+                    return 1;
+                }
+
                 if (!state->touchActive || app->window == nullptr)
                 {
                     return 0;
                 }
-
-                const size_t pointerCount = AMotionEvent_getPointerCount(event);
 
                 for (size_t i = 0; i < pointerCount; ++i)
                 {
@@ -410,35 +515,29 @@ namespace
                     state->lastTouchX = currentX;
                     state->lastTouchY = currentY;
 
-                    const int32_t windowWidth =
+                    const int32_t width =
                         ANativeWindow_getWidth(app->window);
 
-                    if (windowWidth > 0)
+                    const int32_t height =
+                        ANativeWindow_getHeight(app->window);
+
+                    if (width > 0)
                     {
-                        // Проведение через всю ширину окна примерно
-                        // соответствует одному полному обороту.
                         constexpr float fullTurn = 6.2831853f;
 
                         state->angle +=
-                            deltaX / static_cast<float>(windowWidth) *
-                            fullTurn;
+                            deltaX / static_cast<float>(width) * fullTurn;
 
                         state->angle = std::fmod(state->angle, fullTurn);
                     }
 
-                    const int32_t windowHeight =
-                        ANativeWindow_getHeight(app->window);
-
-                    if (windowHeight > 0)
+                    if (height > 0)
                     {
-                        // Полный проход по высоте окна — примерно 180 градусов.
                         constexpr float halfTurn = 3.14159265f;
+                        constexpr float maxTilt = 1.2f;
 
                         state->tiltAngle +=
-                            deltaY / static_cast<float>(windowHeight) * halfTurn;
-
-                        // Ограничиваем наклон, чтобы камера не переворачивалась.
-                        constexpr float maxTilt = 1.2f;
+                            deltaY / static_cast<float>(height) * halfTurn;
 
                         state->tiltAngle = std::clamp(
                             state->tiltAngle,
@@ -461,17 +560,23 @@ namespace
                     (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >>
                     AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
 
-                const size_t pointerCount = AMotionEvent_getPointerCount(event);
-
                 if (pointerIndex >= 0 &&
-                    static_cast<size_t>(pointerIndex) < pointerCount &&
-                    AMotionEvent_getPointerId(
+                    static_cast<size_t>(pointerIndex) < pointerCount)
+                {
+                    const int32_t liftedId = AMotionEvent_getPointerId(
                         event,
                         static_cast<size_t>(pointerIndex)
-                    ) == state->activePointerId)
-                {
-                    state->touchActive = false;
-                    state->activePointerId = -1;
+                    );
+
+                    if (liftedId == state->pinchPointerId1 ||
+                        liftedId == state->pinchPointerId2)
+                    {
+                        // После отпускания одного пальца завершаем жест.
+                        // Для нового вращения нужно снова коснуться экрана.
+                        state->pinchActive = false;
+                        state->touchActive = false;
+                        state->activePointerId = -1;
+                    }
                 }
 
                 return 1;
@@ -481,13 +586,17 @@ namespace
             case AMOTION_EVENT_ACTION_CANCEL:
             {
                 state->touchActive = false;
+                state->pinchActive = false;
                 state->activePointerId = -1;
+                state->pinchPointerId1 = -1;
+                state->pinchPointerId2 = -1;
+                state->lastPinchDistance = 0.0f;
+
                 return 1;
             }
 
             default:
-                // Дополнительные пальцы пока не используются.
-                return state->touchActive ? 1 : 0;
+                return (state->touchActive || state->pinchActive) ? 1 : 0;
         }
     }
 
@@ -532,6 +641,10 @@ namespace
             case APP_CMD_LOST_FOCUS:
                 state->hasFocus = false;
                 state->touchActive = false;
+                state->pinchActive = false;
+                state->pinchPointerId1 = -1;
+                state->pinchPointerId2 = -1;
+                state->lastPinchDistance = 0.0f;
                 state->activePointerId = -1;
                 logInfo("ATLAS: окно потеряло фокус.");
                 break;

@@ -95,13 +95,13 @@ namespace
         }};
     }
 
-    Matrix4 cameraView()
+    Matrix4 cameraView(float distance)
     {
         return {{
             1.0f, 0.0f, 0.0f, 0.0f,
             0.0f, 1.0f, 0.0f, 0.0f,
             0.0f, 0.0f, 1.0f, 0.0f,
-            0.0f, 0.0f, 3.0f, 1.0f
+            0.0f, 0.0f, distance, 1.0f
         }};
     }
 
@@ -1614,10 +1614,14 @@ bool VulkanRenderer::createCommandResources()
         return false;
     }
 
-    return recordCommandBuffers(0.55f, -0.35f);
+    return recordCommandBuffers(0.55f, -0.35f, 3.0f);
 }
 
-bool VulkanRenderer::recordCommandBuffers(float angleY, float angleX)
+bool VulkanRenderer::recordCommandBuffers(
+    float angleY,
+    float angleX,
+    float cameraDistance
+)
 {
     for (size_t i = 0; i < commandBuffers_.size(); ++i)
     {
@@ -1683,7 +1687,7 @@ bool VulkanRenderer::recordCommandBuffers(float angleY, float angleX)
         // Сначала поворачиваем сцену относительно наблюдателя,
         // затем размещаем её перед камерой.
         const Matrix4 view = multiply(
-            cameraView(),
+            cameraView(cameraDistance),
             multiply(
                 rotationX(angleX),
                 rotationY(angleY)
@@ -1744,7 +1748,11 @@ bool VulkanRenderer::recordCommandBuffers(float angleY, float angleX)
     return true;
 }
 
-bool VulkanRenderer::updateRotation(float angleY, float angleX)
+bool VulkanRenderer::updateRotation(
+    float angleY,
+    float angleX,
+    float cameraDistance
+)
 {
     if (!initialized_)
     {
@@ -1762,7 +1770,7 @@ bool VulkanRenderer::updateRotation(float angleY, float angleX)
         return false;
     }
 
-    return recordCommandBuffers(angleY, angleX);
+    return recordCommandBuffers(angleY, angleX, cameraDistance);
 }
 
 bool VulkanRenderer::createSyncObjects()

@@ -33,7 +33,7 @@ jobs:
           source = source.replace(needle, needle + '\n                const float testBefore = state->angle;')
           needle = '                    state->angle = std::fmod(state->angle, fullTurn);'
           assert source.count(needle) == 1
-          source = source.replace(needle, needle + '\n                    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move dx=%.4f width=%d before=%.6f after=%.6f", deltaX, windowWidth, testBefore, state->angle);')
+          source = source.replace(needle, needle + '\n                    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move dx=%.4f width=%d before=%.6f after=%.6f", deltaX, width, testBefore, state->angle);')
           needle = '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                state->touchActive = false;'
           assert source.count(needle) == 1
           source = source.replace(needle, '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "end action=%d active=%d", actionMasked, state->touchActive);\n                state->touchActive = false;')
@@ -42,16 +42,30 @@ jobs:
           source = source.replace(needle, needle + '\n                    const float testBeforeTilt = state->tiltAngle;')
           needle = '                        state->tiltAngle = std::clamp(\n                            state->tiltAngle,\n                            -maxTilt,\n                            maxTilt\n                        );'
           assert source.count(needle) == 1
-          source = source.replace(needle, needle + '\n                        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move2 dx=%.4f dy=%.4f width=%d height=%d before=%.6f after=%.6f", deltaX, deltaY, windowWidth, windowHeight, testBeforeTilt, state->tiltAngle);')
+          source = source.replace(needle, needle + '\n                        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move2 dx=%.4f dy=%.4f width=%d height=%d before=%.6f after=%.6f", deltaX, deltaY, width, height, testBeforeTilt, state->tiltAngle);')
+          needle = '        switch (actionMasked)'
+          assert source.count(needle) == 1
+          source = source.replace(needle, '        __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "event=%d count=%zu touch=%d pinch=%d angle=%.6f tilt=%.6f camera=%.6f", actionMasked, pointerCount, state->touchActive, state->pinchActive, state->angle, state->tiltAngle, state->cameraDistance);\n\n' + needle)
+          needle = '                        state->cameraDistance *=\n'
+          assert source.count(needle) == 1
+          source = source.replace(needle, '                        const float testOldCamera = state->cameraDistance;\n                        const float testOldGap = state->lastPinchDistance;\n' + needle)
+          needle = '                        state->lastPinchDistance = distance;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, needle + '\n                        __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "pinch old=%.6f new=%.6f oldgap=%.6f gap=%.6f angle=%.6f tilt=%.6f", testOldCamera, state->cameraDistance, testOldGap, distance, state->angle, state->tiltAngle);')
           needle = '                state->hasFocus = false;'
           assert source.count(needle) == 1
-          source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);')
+          source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "lost focus pinch=%d", state->pinchActive);')
           needle = '                state->activePointerId = -1;\n                logInfo("ATLAS: окно потеряло фокус.");'
           assert source.count(needle) == 1
-          source = source.replace(needle, '                state->activePointerId = -1;\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "focus reset active=%d id=%d", state->touchActive, state->activePointerId);\n                logInfo("ATLAS: окно потеряло фокус.");')
+          source = source.replace(needle, '                state->activePointerId = -1;\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "focus reset active=%d id=%d", state->touchActive, state->activePointerId);\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "focus reset pinch=%d id1=%d id2=%d gap=%.2f", state->pinchActive, state->pinchPointerId1, state->pinchPointerId2, state->lastPinchDistance);\n                logInfo("ATLAS: окно потеряло фокус.");')
           path.write_text(source)
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)
+          mkdir -p "$RUNNER_TEMP/pinch-classes" "$RUNNER_TEMP/pinch-dex"
+          javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/pinch-classes" .github/scripts/PinchInput.java
+          D8=$(find "$ANDROID_HOME/build-tools" -name d8 -type f | sort -V | tail -n 1)
+          "$D8" --min-api 26 --output "$RUNNER_TEMP/pinch-dex" "$RUNNER_TEMP/pinch-classes/PinchInput.class"
+          (cd "$RUNNER_TEMP/pinch-dex" && jar cf "$RUNNER_TEMP/pinch.jar" classes.dex)
       - name: Enable KVM and install image library
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
