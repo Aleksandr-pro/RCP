@@ -7,13 +7,14 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
+import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import java.util.Locale;
 
 public final class AtlasActivity extends NativeActivity {
     private TextView fpsView;
+    private PopupWindow fpsPopup;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -34,12 +35,27 @@ public final class AtlasActivity extends NativeActivity {
         background.setCornerRadius(6 * density);
         fpsView.setBackground(background);
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+        // NativeActivity gives its window surface directly to Vulkan. A separate,
+        // non-interactive window keeps Android's text above that native surface.
+        fpsPopup = new PopupWindow(fpsView,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP | Gravity.START);
-        params.setMargins(margin, margin, margin, margin);
-        addContentView(fpsView, params);
+                ViewGroup.LayoutParams.WRAP_CONTENT, false);
+        fpsPopup.setTouchable(false);
+        fpsPopup.setClippingEnabled(true);
+        getWindow().getDecorView().post(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                fpsPopup.showAtLocation(getWindow().getDecorView(),
+                        Gravity.TOP | Gravity.START, margin, margin);
+            }
+        });
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (fpsPopup != null) {
+            fpsPopup.dismiss();
+        }
+        super.onDestroy();
     }
 
     // Called by the native render thread, at most once per statistics interval.
