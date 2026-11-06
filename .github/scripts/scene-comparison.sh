@@ -15,6 +15,14 @@ w, h = Image.open(sys.argv[1]).size
 assert (w < h) if sys.argv[2] == 'portrait' else (w > h), (w, h)
 PYORIENTATION
     then return 0; fi
+    if [ "$expected" = landscape ] && [ "$attempt" = 5 ]; then
+      # Some emulators start the launcher in portrait despite the rotation
+      # setting. Relaunch once and keep the dimension assertion mandatory.
+      adb shell am force-stop "$package"
+      adb shell settings put system accelerometer_rotation 0
+      adb shell settings put system user_rotation 1
+      adb shell am start -n "$package/.AtlasActivity"
+    fi
     sleep 2
   done
   echo "::error::Display did not reach $expected orientation"
