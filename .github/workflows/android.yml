@@ -54,7 +54,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.8-debug
+          name: ATLAS-0.9-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -186,15 +186,15 @@ jobs:
       - name: Check if this is the matrix comparison version
         id: version
         run: |
-          if grep -q 'versionName "0.8"' ATLAS/app/build.gradle; then
+          if grep -q 'versionName "0.9"' ATLAS/app/build.gradle; then
             echo 'enabled=true' >> "$GITHUB_OUTPUT"
           fi
-      - name: Check out the ATLAS 0.7 reference
+      - name: Check out the ATLAS 0.8 reference
         if: steps.version.outputs.enabled == 'true'
         uses: actions/checkout@v4
         with:
-          ref: 3a5ed6d62d9be8e18c7ba21b91316f3f0f891930
-          path: reference-0.7
+          ref: 04a62f3eb9c4f0df3dada793d92a82260343ae17
+          path: reference-0.8
       - uses: actions/setup-java@v5
         if: steps.version.outputs.enabled == 'true'
         with:
@@ -209,8 +209,20 @@ jobs:
         env:
           ATLAS_TEST_ABI: x86_64
         run: |
-          (cd reference-0.7/ATLAS && ./gradlew assembleDebug)
+          (cd reference-0.8/ATLAS && ./gradlew assembleDebug)
           (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-normal.apk"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
+          text = path.read_text()
+          assert text.count('rotationY(0.55f)') == 1
+          path.write_text(text.replace('rotationY(0.55f)', 'rotationY(1.0f)'))
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-rotated.apk"
+          git checkout -- ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
+          cp "$RUNNER_TEMP/atlas-normal.apk" ATLAS/app/build/outputs/apk/debug/app-debug.apk
       - name: Enable KVM and install image library
         if: steps.version.outputs.enabled == 'true'
         run: |
@@ -228,7 +240,7 @@ jobs:
           package=com.atlas.engine
           adb shell settings put system accelerometer_rotation 0
           adb shell settings put system user_rotation 0
-          adb install -r reference-0.7/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+          adb install -r reference-0.8/ATLAS/app/build/outputs/apk/debug/app-debug.apk
           adb logcat -c
           adb shell am start -n "$package/android.app.NativeActivity"
           sleep 10
@@ -248,6 +260,12 @@ jobs:
           sleep 8
           adb exec-out screencap -p > depth-comparison/after-portrait.png
           python3 .github/scripts/check-screen.py depth-comparison/after-portrait.png after
+          adb shell am force-stop "$package"
+          adb install -r "$RUNNER_TEMP/atlas-rotated.apk"
+          adb shell am start -n "$package/android.app.NativeActivity"
+          sleep 10
+          adb exec-out screencap -p > depth-comparison/rotated-portrait.png
+          python3 .github/scripts/check-screen.py depth-comparison/rotated-portrait.png rotated
           adb logcat -d -s ATLAS:I '*:S' > depth-comparison/atlas-log.txt
           grep -q 'Vulkan: буфер глубины создан, формат' depth-comparison/atlas-log.txt
           grep -q 'Vulkan: кадр успешно отправлен на экран' depth-comparison/atlas-log.txt
@@ -269,10 +287,19 @@ jobs:
               print(f'{orientation}: {changed}/{total} substantially changed pixels ({fraction:.3%})')
               if fraction > 0.005:
                   raise AssertionError(f'{orientation} faces changed significantly: {fraction:.3%}')
+          normal = Image.open('depth-comparison/after-portrait.png').convert('RGB')
+          rotated = Image.open('depth-comparison/rotated-portrait.png').convert('RGB')
+          assert normal.size == rotated.size
+          w, h = normal.size
+          crop = (w // 20, h // 10, w * 19 // 20, h * 9 // 10)
+          diff = ImageChops.difference(normal.crop(crop), rotated.crop(crop))
+          fraction = sum(1 for pixel in diff.getdata() if max(pixel) > 20) / (diff.width * diff.height)
+          print(f'Rotation test: {fraction:.3%} substantially changed pixels')
+          assert fraction > 0.005, f'Changing the C++ rotation did not visibly change the cube: {fraction:.3%}'
           PYCODE
           SCRIPT
           chmod +x "$RUNNER_TEMP/depth-test.sh"
-      - name: Compare 0.7 and 0.8 on Android emulator
+      - name: Compare 0.8 and 0.9 on Android emulator
         if: steps.version.outputs.enabled == 'true'
         timeout-minutes: 8
         uses: reactivecircus/android-emulator-runner@v2

@@ -61,7 +61,6 @@ grep -q 'Vulkan: графический конвейер создан' atlas-log
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 grep -q 'Vulkan: currentTransform=' atlas-log.txt
-grep -q 'Vulkan: aspect буфера =' atlas-log.txt
 check_screen portrait
 adb shell input keyevent KEYCODE_HOME
 sleep 3

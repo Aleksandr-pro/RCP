@@ -3,6 +3,7 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -17,6 +18,89 @@ namespace
         float position[3];
         float color[3];
     };
+
+    // Матрица 4×4. Элементы хранятся по столбцам,
+    // как ожидает GLSL для mat4.
+    struct Matrix4
+    {
+        float values[16];
+    };
+
+    static_assert(sizeof(Matrix4) == 64, "Matrix4 должна занимать 64 байта.");
+
+    Matrix4 multiply(const Matrix4& a, const Matrix4& b)
+    {
+        Matrix4 result{};
+
+        for (int column = 0; column < 4; ++column)
+        {
+            for (int row = 0; row < 4; ++row)
+            {
+                for (int k = 0; k < 4; ++k)
+                {
+                    result.values[column * 4 + row] +=
+                        a.values[k * 4 + row] *
+                        b.values[column * 4 + k];
+                }
+            }
+        }
+
+        return result;
+    }
+
+    Matrix4 rotationY(float angle)
+    {
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+
+        return {{
+             c,    0.0f, -s,    0.0f,
+             0.0f, 1.0f,  0.0f, 0.0f,
+             s,    0.0f,  c,    0.0f,
+             0.0f, 0.0f,  0.0f, 1.0f
+        }};
+    }
+
+    Matrix4 rotationX(float angle)
+    {
+        const float c = std::cos(angle);
+        const float s = std::sin(angle);
+
+        return {{
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, c,    s,    0.0f,
+            0.0f, -s,   c,    0.0f,
+            0.0f, 0.0f, 0.0f, 1.0f
+        }};
+    }
+
+    Matrix4 cameraView()
+    {
+        return {{
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            0.0f, 0.0f, 3.0f, 1.0f
+        }};
+    }
+
+    Matrix4 perspective(float aspect)
+    {
+        const float nearPlane = 0.1f;
+        const float farPlane = 20.0f;
+
+        const float scale = std::min(aspect, 1.0f) * 1.8f;
+        const float depthScale = farPlane / (farPlane - nearPlane);
+        const float depthOffset =
+            -(farPlane * nearPlane) / (farPlane - nearPlane);
+
+        return {{
+            scale / aspect, 0.0f,  0.0f,        0.0f,
+            0.0f,           scale, 0.0f,        0.0f,
+            0.0f,           0.0f,  depthScale,  1.0f,
+            0.0f,           0.0f,  depthOffset, 0.0f
+        }};
+    }
 
     // Куб размером 1×1×1 с центром в начале координат.
     // Каждая грань состоит из двух треугольников — шести вершин.
@@ -1189,7 +1273,7 @@ bool VulkanRenderer::createGraphicsPipeline(
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
     // Два float: пропорции экрана и код поворота.
-    pushConstantRange.size = sizeof(float) * 2;
+    pushConstantRange.size = sizeof(Matrix4);
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1556,26 +1640,28 @@ bool VulkanRenderer::createCommandResources()
 
         const float width = static_cast<float>(swapchainExtent_.width);
         const float height = static_cast<float>(swapchainExtent_.height);
+        const float aspect = width / height;
 
-        const float pushConstants[2] = {
-            width / height,
-            0.0f
-        };
+        // Сначала поворот вокруг Y, затем вокруг X.
+        const Matrix4 model = multiply(
+            rotationX(-0.35f),
+            rotationY(0.55f)
+        );
+
+        const Matrix4 view = cameraView();
+        const Matrix4 projection = perspective(aspect);
+
+        // Итоговая матрица: projection × view × model.
+        const Matrix4 viewModel = multiply(view, model);
+        const Matrix4 mvp = multiply(projection, viewModel);
 
         vkCmdPushConstants(
             commandBuffers_[i],
             pipelineLayout_,
             VK_SHADER_STAGE_VERTEX_BIT,
             0,
-            sizeof(pushConstants),
-            pushConstants
-        );
-
-        __android_log_print(
-            ANDROID_LOG_INFO,
-            LOG_TAG,
-            "Vulkan: aspect буфера = %.4f",
-            pushConstants[0]
+            sizeof(Matrix4),
+            &mvp
         );
 
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
