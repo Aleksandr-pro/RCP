@@ -69,7 +69,9 @@ for i in $(seq 1 30); do
 done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
-adb logcat -d -s ATLAS_TEST:I '*:S' | grep -q 'update angle='
+adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-initial-trace.txt
+grep -q 'update angle=' atlas-initial-trace.txt
+grep -q 'scene draw count=9' atlas-initial-trace.txt
 grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
