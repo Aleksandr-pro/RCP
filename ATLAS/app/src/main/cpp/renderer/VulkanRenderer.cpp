@@ -74,6 +74,26 @@ namespace
         }};
     }
 
+    Matrix4 translation(float x, float y, float z)
+    {
+        return {{
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            x,    y,    z,    1.0f
+        }};
+    }
+
+    Matrix4 uniformScale(float scale)
+    {
+        return {{
+            scale, 0.0f,  0.0f,  0.0f,
+            0.0f,  scale, 0.0f,  0.0f,
+            0.0f,  0.0f,  scale, 0.0f,
+            0.0f,  0.0f,  0.0f,  1.0f
+        }};
+    }
+
     Matrix4 cameraView()
     {
         return {{
@@ -1644,32 +1664,6 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
             graphicsPipeline_
         );
 
-        const float width = static_cast<float>(swapchainExtent_.width);
-        const float height = static_cast<float>(swapchainExtent_.height);
-        const float aspect = width / height;
-
-        // Сначала поворот вокруг Y, затем вокруг X.
-        const Matrix4 model = multiply(
-            rotationX(-0.35f),
-            rotationY(angle)
-        );
-
-        const Matrix4 view = cameraView();
-        const Matrix4 projection = perspective(aspect);
-
-        // Итоговая матрица: projection × view × model.
-        const Matrix4 viewModel = multiply(view, model);
-        const Matrix4 mvp = multiply(projection, viewModel);
-
-        vkCmdPushConstants(
-            commandBuffers_[i],
-            pipelineLayout_,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0,
-            sizeof(Matrix4),
-            &mvp
-        );
-
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
         const VkDeviceSize offsets[] = {0};
 
@@ -1681,17 +1675,64 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
             offsets
         );
 
-        // Тест глубины: рисуем шесть граней в обратном порядке.
-        // Каждая грань содержит шесть вершин.
-        for (int face = 5; face >= 0; --face)
+        const float width = static_cast<float>(swapchainExtent_.width);
+        const float height = static_cast<float>(swapchainExtent_.height);
+        const float aspect = width / height;
+
+        const Matrix4 view = cameraView();
+        const Matrix4 projection = perspective(aspect);
+
+        constexpr float spacing = 0.68f;
+        constexpr float cubeSize = 0.42f;
+
+        for (int row = -1; row <= 1; ++row)
         {
-            vkCmdDraw(
-                commandBuffers_[i],
-                6,                              // Вершин на грань
-                1,                              // Один экземпляр
-                static_cast<uint32_t>(face * 6), // Первая вершина грани
-                0
-            );
+            for (int column = -1; column <= 1; ++column)
+            {
+                // Небольшая разница углов помогает увидеть,
+                // что каждый объект получает собственную матрицу.
+                const float objectAngle =
+                    angle + static_cast<float>(row + column) * 0.15f;
+
+                const Matrix4 rotation = multiply(
+                    rotationX(-0.35f),
+                    rotationY(objectAngle)
+                );
+
+                const Matrix4 position = translation(
+                    static_cast<float>(column) * spacing,
+                    static_cast<float>(row) * spacing,
+                    0.0f
+                );
+
+                // Сначала масштаб, затем поворот, затем перемещение.
+                const Matrix4 model = multiply(
+                    position,
+                    multiply(rotation, uniformScale(cubeSize))
+                );
+
+                const Matrix4 mvp = multiply(
+                    projection,
+                    multiply(view, model)
+                );
+
+                vkCmdPushConstants(
+                    commandBuffers_[i],
+                    pipelineLayout_,
+                    VK_SHADER_STAGE_VERTEX_BIT,
+                    0,
+                    sizeof(Matrix4),
+                    &mvp
+                );
+
+                vkCmdDraw(
+                    commandBuffers_[i],
+                    CUBE_VERTEX_COUNT,
+                    1,
+                    0,
+                    0
+                );
+            }
         }
 
         vkCmdEndRenderPass(commandBuffers_[i]);
