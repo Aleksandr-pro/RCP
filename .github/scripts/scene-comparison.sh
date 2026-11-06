@@ -84,7 +84,7 @@ PYORIENTATION
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/atlas-014-normal.apk"
 adb shell settings put system accelerometer_rotation 0
-adb shell wm user-rotation lock 0
+adb shell settings put system user_rotation 0
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 6
@@ -98,8 +98,14 @@ sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
 adb logcat -c
-adb shell wm user-rotation lock 1
-sleep 5
+# Start a fresh landscape activity, so this gesture check is independent of
+# the preceding portrait swipe. Rotation during an active app is tested above.
+adb shell am force-stop "$package"
+adb shell input keyevent KEYCODE_HOME
+adb shell settings put system user_rotation 1
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 8
 wait_orientation landscape
 adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
 adb shell input swipe 140 180 460 180 700
