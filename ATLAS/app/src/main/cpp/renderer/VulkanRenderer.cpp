@@ -1556,6 +1556,7 @@ bool VulkanRenderer::createCommandResources()
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex = queueFamilyIndex_;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     if (!checkResult(
             vkCreateCommandPool(
@@ -1592,6 +1593,11 @@ bool VulkanRenderer::createCommandResources()
         return false;
     }
 
+    return recordCommandBuffers(0.55f);
+}
+
+bool VulkanRenderer::recordCommandBuffers(float angle)
+{
     for (size_t i = 0; i < commandBuffers_.size(); ++i)
     {
         VkCommandBufferBeginInfo beginInfo{};
@@ -1645,7 +1651,7 @@ bool VulkanRenderer::createCommandResources()
         // Сначала поворот вокруг Y, затем вокруг X.
         const Matrix4 model = multiply(
             rotationX(-0.35f),
-            rotationY(0.55f)
+            rotationY(angle)
         );
 
         const Matrix4 view = cameraView();
@@ -1700,6 +1706,27 @@ bool VulkanRenderer::createCommandResources()
     }
 
     return true;
+}
+
+bool VulkanRenderer::updateRotation(float angle)
+{
+    if (!initialized_)
+    {
+        return false;
+    }
+
+    // В текущей версии drawFrame() завершает работу очереди
+    // через vkQueueWaitIdle(), поэтому предыдущие команды уже
+    // не выполняются. Для многокадрового рендера это изменится.
+    if (!checkResult(
+            vkResetCommandPool(device_, commandPool_, 0),
+            "vkResetCommandPool"
+        ))
+    {
+        return false;
+    }
+
+    return recordCommandBuffers(angle);
 }
 
 bool VulkanRenderer::createSyncObjects()
@@ -1842,7 +1869,6 @@ bool VulkanRenderer::drawFrame()
         return false;
     }
 
-    logInfo("Vulkan: кадр успешно отправлен на экран.");
     return true;
 }
 

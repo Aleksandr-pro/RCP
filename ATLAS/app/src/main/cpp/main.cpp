@@ -2,6 +2,9 @@
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
 
+#include <chrono>
+#include <cmath>
+
 #include "renderer/VulkanRenderer.h"
 
 namespace
@@ -11,6 +14,14 @@ namespace
     struct EngineState
     {
         VulkanRenderer renderer;
+
+        bool isActive = false;
+        bool hasFocus = false;
+
+        float angle = 0.55f;
+
+        std::chrono::steady_clock::time_point lastFrameTime{};
+        std::chrono::steady_clock::time_point nextFrameTime{};
     };
 
     void logInfo(const char* message)
@@ -129,6 +140,67 @@ namespace
         }
     }
 
+    void updateAndDraw(android_app* app, EngineState* state)
+    {
+        if (app == nullptr ||
+            state == nullptr ||
+            app->window == nullptr ||
+            !state->renderer.isInitialized())
+        {
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+
+        float deltaSeconds =
+            std::chrono::duration<float>(
+                now - state->lastFrameTime
+            ).count();
+
+        state->lastFrameTime = now;
+
+        // Ограничиваем скачок времени после задержки приложения.
+        if (deltaSeconds < 0.0f)
+        {
+            deltaSeconds = 0.0f;
+        }
+        else if (deltaSeconds > 0.1f)
+        {
+            deltaSeconds = 0.1f;
+        }
+
+        constexpr float rotationSpeed = 0.8f; // радиан в секунду
+        constexpr float fullTurn = 6.2831853f;
+
+        state->angle = std::fmod(
+            state->angle + rotationSpeed * deltaSeconds,
+            fullTurn
+        );
+
+        if (!state->renderer.updateRotation(state->angle))
+        {
+            logError("ATLAS: не удалось обновить команды кадра.");
+            state->renderer.shutdown();
+            return;
+        }
+
+        if (state->renderer.drawFrame())
+        {
+            return;
+        }
+
+        if (state->renderer.isSwapchainOutOfDate())
+        {
+            logInfo("ATLAS: swapchain устарел во время анимации.");
+            restartRenderer(app, state);
+        }
+        else
+        {
+            logError("ATLAS: ошибка отрисовки во время анимации.");
+            state->renderer.shutdown();
+        }
+    }
+
     void handleAppCommand(android_app* app, int32_t command)
     {
         auto* state = static_cast<EngineState*>(app->userData);
@@ -145,7 +217,22 @@ namespace
                 break;
 
             case APP_CMD_RESUME:
+                state->isActive = true;
+                state->lastFrameTime = std::chrono::steady_clock::now();
+                state->nextFrameTime = state->lastFrameTime;
                 logInfo("ATLAS: приложение активно.");
+                break;
+
+            case APP_CMD_GAINED_FOCUS:
+                state->hasFocus = true;
+                state->lastFrameTime = std::chrono::steady_clock::now();
+                state->nextFrameTime = state->lastFrameTime;
+                logInfo("ATLAS: окно получило фокус.");
+                break;
+
+            case APP_CMD_LOST_FOCUS:
+                state->hasFocus = false;
+                logInfo("ATLAS: окно потеряло фокус.");
                 break;
 
             case APP_CMD_INIT_WINDOW:
@@ -174,6 +261,7 @@ namespace
                 break;
 
             case APP_CMD_PAUSE:
+                state->isActive = false;
                 logInfo("ATLAS: приложение приостановлено.");
                 break;
 
@@ -203,15 +291,53 @@ void android_main(android_app* app)
     app->userData = &state;
     app->onAppCmd = handleAppCommand;
 
+    constexpr auto frameInterval = std::chrono::nanoseconds(33333333);
+
     while (app->destroyRequested == 0)
     {
+        const bool canAnimate =
+            state.isActive &&
+            state.hasFocus &&
+            app->window != nullptr &&
+            state.renderer.isInitialized();
+
+        int timeoutMs = -1;
+
+        if (canAnimate)
+        {
+            const auto now = std::chrono::steady_clock::now();
+
+            if (now >= state.nextFrameTime)
+            {
+                timeoutMs = 0;
+            }
+            else
+            {
+                const auto remaining = state.nextFrameTime - now;
+
+                // Округляем вверх до миллисекунды, чтобы не крутить
+                // пустой цикл перед наступлением времени кадра.
+                const auto milliseconds =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        remaining
+                    );
+
+                timeoutMs = static_cast<int>(milliseconds.count());
+
+                if (std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        milliseconds
+                    ) < remaining)
+                {
+                    ++timeoutMs;
+                }
+            }
+        }
+
         int events = 0;
         android_poll_source* source = nullptr;
 
-        // Постоянная отрисовка пока не нужна.
-        // Ожидаем событие Android без пустого цикла.
         const int result = ALooper_pollOnce(
-            -1,
+            timeoutMs,
             nullptr,
             &events,
             reinterpret_cast<void**>(&source)
@@ -226,6 +352,28 @@ void android_main(android_app* app)
         if (source != nullptr)
         {
             source->process(app, source);
+        }
+
+        if (app->destroyRequested != 0)
+        {
+            break;
+        }
+
+        const bool ready =
+            state.isActive &&
+            state.hasFocus &&
+            app->window != nullptr &&
+            state.renderer.isInitialized();
+
+        const auto now = std::chrono::steady_clock::now();
+
+        if (ready && now >= state.nextFrameTime)
+        {
+            updateAndDraw(app, &state);
+
+            // Не пытаемся догонять пропущенные кадры.
+            state.nextFrameTime =
+                std::chrono::steady_clock::now() + frameInterval;
         }
     }
 

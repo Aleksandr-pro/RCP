@@ -47,12 +47,12 @@ adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/android.app.NativeActivity"
 for i in $(seq 1 30); do
-  if adb logcat -d -s ATLAS:I '*:S' | grep -q 'Vulkan: кадр успешно отправлен на экран'; then break; fi
+  if adb logcat -d -s ATLAS_TEST:I '*:S' | grep -q 'update angle='; then break; fi
   sleep 2
 done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
-grep -q 'Vulkan: кадр успешно отправлен на экран' atlas-log.txt
+adb logcat -d -s ATLAS_TEST:I '*:S' | grep -q 'update angle='
 grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
@@ -62,11 +62,39 @@ grep -q 'Vulkan: буфер вершин создан и заполнен' atlas
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
+adb exec-out screencap -p > motion-before.png
+sleep 2
+adb exec-out screencap -p > motion-after.png
+python3 - <<'PYMOTION'
+from PIL import Image, ImageChops
+before = Image.open('motion-before.png').convert('RGB')
+after = Image.open('motion-after.png').convert('RGB')
+assert before.size == after.size
+w, h = before.size
+crop = (w // 20, h // 10, w * 19 // 20, h * 9 // 10)
+diff = ImageChops.difference(before.crop(crop), after.crop(crop))
+fraction = sum(1 for p in diff.getdata() if max(p) > 20) / (diff.width * diff.height)
+print(f'Animation: {fraction:.2%} of rendered-area pixels changed')
+assert fraction > 0.005, 'The cube did not visibly move'
+PYMOTION
 adb shell input keyevent KEYCODE_HOME
 sleep 3
+# Preserve lifecycle and error logs before clearing the test trace.
+adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
+# The test-only draw trace is emitted at drawFrame entry, not in production APKs.
+adb logcat -c
+sleep 4
+adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-frame-test.txt
+if grep -q 'draw\|update angle=' atlas-frame-test.txt; then
+  cat atlas-frame-test.txt
+  echo '::error::Rendering continued while in the background'
+  exit 1
+fi
 adb shell am start -n "$package/android.app.NativeActivity"
 sleep 5
 check_screen
+adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-resumed-frames.txt
+grep -q 'update angle=' atlas-resumed-frames.txt
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 sleep 5
@@ -82,11 +110,9 @@ if ! check_screen landscape; then
   fi
   exit 1
 fi
-python3 .github/scripts/check-screen.py --compare
 adb shell settings put system user_rotation 3
 sleep 5
 check_screen landscape-reverse
-python3 .github/scripts/check-screen.py --compare landscape-reverse
 # Exercise several consecutive orientation changes and verify each resulting frame.
 for rotation in 0 1 0 3 0; do
   adb shell settings put system user_rotation "$rotation"
@@ -94,6 +120,8 @@ for rotation in 0 1 0 3 0; do
   check_screen
 done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
+cat atlas-pre-background-log.txt atlas-log.txt > atlas-combined-log.txt
+mv atlas-combined-log.txt atlas-log.txt
 if grep -E 'vkCreateBuffer: ошибка|vkAllocateMemory для вершин: ошибка|vkMapMemory для вершин: ошибка' atlas-log.txt; then
   echo 'Vertex buffer Vulkan error found' >&2
   exit 1
@@ -114,6 +142,7 @@ check_screen
 adb shell am force-stop "$package"
 # Check all engine error-level logs, including Vulkan failures.
 adb logcat -d -s ATLAS:E '*:S' > atlas-errors.txt
+if grep -E '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-pre-background-log.txt >> atlas-errors.txt; then :; fi
 if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-errors.txt; then
   summary=$(tail -n 30 atlas-errors.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=ATLAS error log::$summary"

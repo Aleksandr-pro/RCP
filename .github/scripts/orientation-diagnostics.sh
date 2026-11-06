@@ -26,7 +26,7 @@ adb shell screencap -p /sdcard/atlas-orientation.png
 adb pull /sdcard/atlas-orientation.png orientation-diagnostics/portrait-after-rotation.png
 adb logcat -d -s ATLAS:I '*:S' > orientation-diagnostics/atlas-log.txt
 grep -E 'native window=|currentTransform=|aspect буфера|swapchain |выбран GPU' orientation-diagnostics/atlas-log.txt > orientation-diagnostics/summary.txt
-summary=$(cat orientation-diagnostics/summary.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+summary=$(tail -n 60 orientation-diagnostics/summary.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
 echo "::notice title=orientation-log::$summary"
 python3 - <<'PY'
 from PIL import Image
