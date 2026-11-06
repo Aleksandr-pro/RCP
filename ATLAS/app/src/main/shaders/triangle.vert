@@ -8,59 +8,84 @@ layout(location = 0) out vec3 vertexColor;
 layout(push_constant) uniform PushConstants
 {
     float aspectRatio;
-    float rotation;
+
+    // Оставляем второе поле для совместимости с текущим C++-кодом.
+    // В этой версии оно не используется.
+    float reserved;
 } pushConstants;
 
-void main()
+// Матрица поворота вокруг оси Y.
+mat4 rotationY(float angle)
 {
-    vec3 position = inPosition;
+    float c = cos(angle);
+    float s = sin(angle);
 
-    float angleY = 0.55;
-    float cosY = cos(angleY);
-    float sinY = sin(angleY);
-
-    vec3 rotatedY = vec3(
-        cosY * position.x + sinY * position.z,
-        position.y,
-        -sinY * position.x + cosY * position.z
+    // В GLSL аргументы mat4 задаются по столбцам.
+    return mat4(
+         c,   0.0, -s,  0.0,
+         0.0, 1.0, 0.0, 0.0,
+         s,   0.0,  c,  0.0,
+         0.0, 0.0, 0.0, 1.0
     );
+}
 
-    float angleX = -0.35;
-    float cosX = cos(angleX);
-    float sinX = sin(angleX);
+// Матрица поворота вокруг оси X.
+mat4 rotationX(float angle)
+{
+    float c = cos(angle);
+    float s = sin(angle);
 
-    vec3 rotated = vec3(
-        rotatedY.x,
-        cosX * rotatedY.y - sinX * rotatedY.z,
-        sinX * rotatedY.y + cosX * rotatedY.z
+    return mat4(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, c,   s,   0.0,
+        0.0, -s,  c,   0.0,
+        0.0, 0.0, 0.0, 1.0
     );
+}
 
-    float distanceToCamera = 3.0 + rotated.z;
+// Камера находится условно перед объектом.
+// В этой тестовой системе положительная Z направлена вглубь сцены.
+mat4 cameraView()
+{
+    return mat4(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 3.0, 1.0
+    );
+}
 
-    float aspect = max(pushConstants.aspectRatio, 0.01);
-    float scale = min(aspect, 1.0) * 1.8;
-
+// Перспектива с диапазоном глубины Vulkan от 0 до 1.
+mat4 perspective(float aspect)
+{
     const float nearPlane = 0.1;
     const float farPlane = 20.0;
 
-    float clipZ =
-        farPlane / (farPlane - nearPlane) * distanceToCamera -
-        (farPlane * nearPlane) / (farPlane - nearPlane);
+    // Сохраняем прежний приблизительный размер фигуры.
+    float scale = min(aspect, 1.0) * 1.8;
 
-    // Координаты для изображения в итоговой ориентации экрана.
-    vec2 screenXY = vec2(
-        rotated.x * scale / aspect,
-        rotated.y * scale
+    float depthScale = farPlane / (farPlane - nearPlane);
+    float depthOffset =
+        -(farPlane * nearPlane) / (farPlane - nearPlane);
+
+    return mat4(
+        scale / aspect, 0.0,   0.0,        0.0,
+        0.0,            scale, 0.0,        0.0,
+        0.0,            0.0,   depthScale, 1.0,
+        0.0,            0.0,   depthOffset, 0.0
     );
+}
 
-    // Ориентацию поверхности для этого теста обрабатывает система.
-    vec2 bufferXY = screenXY;
+void main()
+{
+    float aspect = max(pushConstants.aspectRatio, 0.01);
 
-    gl_Position = vec4(
-        bufferXY,
-        clipZ,
-        distanceToCamera
-    );
+    mat4 model = rotationX(-0.35) * rotationY(0.55);
+    mat4 view = cameraView();
+    mat4 projection = perspective(aspect);
+
+    gl_Position =
+        projection * view * model * vec4(inPosition, 1.0);
 
     vertexColor = inColor;
 }
