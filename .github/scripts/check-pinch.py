@@ -25,9 +25,26 @@ for orientation in ('portrait', 'landscape'):
             assert later is not None, 'No remaining-finger move observed'
             assert later[2] == 0 and later[3] == 0, f'Gesture was not deactivated: {later}'
             assert abs(later[4] - angle) < 1e-5 and abs(later[5] - tilt) < 1e-5, 'View jumped after lifting a finger'
+            last_up = next((e for e in tail if e[0] == 1 and e[1] == 1), None)
+            assert last_up is not None, 'No final finger release observed'
+            assert abs(last_up[4] - angle) < 1e-5 and abs(last_up[5] - tilt) < 1e-5, 'Remaining finger unexpectedly rotated the view'
             break
     else:
         raise AssertionError('No active pinch ended by lifting a finger')
+    previous_down = None
+    gesture_count = 0
+    for event in events:
+        action, count, touch, pinch, angle, tilt, camera = event
+        if action == 5 and count >= 2:
+            previous_down = (angle, tilt)
+        elif previous_down is not None and action in (2, 6) and count >= 2:
+            assert abs(angle - previous_down[0]) < 1e-5 and abs(tilt - previous_down[1]) < 1e-5, 'Pinch changed the view rotation'
+            if action == 6:
+                gesture_count += 1
+                previous_down = None
+        elif action in (1, 3):
+            previous_down = None
+    assert gesture_count >= 2, f'Expected both pinch directions in {orientation}'
     if orientation == 'landscape':
         assert ('lost focus pinch=1' in log or re.search(r'event=3 count=\d+ touch=0 pinch=1', log)), 'No active pinch was cancelled by backgrounding'
         assert 'focus reset pinch=0 id1=-1 id2=-1 gap=0.00' in log, 'Pinch state not reset on focus loss'

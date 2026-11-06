@@ -129,7 +129,9 @@ sleep 8
 wait_orientation landscape
 adb logcat -c
 pinch out 640 320
-pinch hold 640 320 &
+# Backgrounding may terminate the shell injector with SIGKILL; handle that
+# expected status in the parent rather than emitting a misleading ERR annotation.
+( trap - ERR; pinch hold 640 320 ) &
 pinch_pid=$!
 sleep 1
 adb shell input keyevent KEYCODE_HOME
