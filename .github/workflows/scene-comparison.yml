@@ -1,0 +1,76 @@
+name: Scene comparison
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out ATLAS 0.13 reference
+        uses: actions/checkout@v4
+        with:
+          ref: 50bd006411613c38a3756d14dab323066a1a324f
+          path: reference-0.13
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build components
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
+      - name: Build fixed-angle comparison APKs
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          for path in (Path('reference-0.13/ATLAS/app/src/main/cpp/main.cpp'),
+                       Path('ATLAS/app/src/main/cpp/main.cpp')):
+              source = path.read_text()
+              assert source.count('constexpr float rotationSpeed = 0.8f;') == 1
+              path.write_text(source.replace('constexpr float rotationSpeed = 0.8f;',
+                                             'constexpr float rotationSpeed = 0.0f;'))
+          PYCODE
+          (cd reference-0.13/ATLAS && ./gradlew assembleDebug)
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-014-normal.apk"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/cpp/scene/TestScene.h')
+          source = path.read_text()
+          old = '{ 0.00f,  0.00f, 0.0f, 0.42f,  0.00f}'
+          assert source.count(old) == 1
+          path.write_text(source.replace(old, '{ 0.00f,  0.00f, 0.0f, 0.60f,  0.00f}'))
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-014-larger.apk"
+          git checkout -- ATLAS/app/src/main/cpp/main.cpp ATLAS/app/src/main/cpp/scene/TestScene.h
+      - name: Enable KVM and install image library
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          python3 -m pip install --user --break-system-packages Pillow
+      - name: Compare images on emulator
+        timeout-minutes: 10
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: .github/scripts/scene-comparison.sh
+      - name: Upload comparison screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATLAS-scene-comparison
+          path: scene-comparison/
+          if-no-files-found: ignore

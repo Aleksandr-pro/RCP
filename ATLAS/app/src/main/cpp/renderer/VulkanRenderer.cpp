@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "../scene/TestScene.h"
 
 #include <android/log.h>
 
@@ -71,6 +72,26 @@ namespace
             0.0f, c,    s,    0.0f,
             0.0f, -s,   c,    0.0f,
             0.0f, 0.0f, 0.0f, 1.0f
+        }};
+    }
+
+    Matrix4 translation(float x, float y, float z)
+    {
+        return {{
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            x,    y,    z,    1.0f
+        }};
+    }
+
+    Matrix4 uniformScale(float scale)
+    {
+        return {{
+            scale, 0.0f,  0.0f,  0.0f,
+            0.0f,  scale, 0.0f,  0.0f,
+            0.0f,  0.0f,  scale, 0.0f,
+            0.0f,  0.0f,  0.0f,  1.0f
         }};
     }
 
@@ -1644,32 +1665,6 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
             graphicsPipeline_
         );
 
-        const float width = static_cast<float>(swapchainExtent_.width);
-        const float height = static_cast<float>(swapchainExtent_.height);
-        const float aspect = width / height;
-
-        // Сначала поворот вокруг Y, затем вокруг X.
-        const Matrix4 model = multiply(
-            rotationX(-0.35f),
-            rotationY(angle)
-        );
-
-        const Matrix4 view = cameraView();
-        const Matrix4 projection = perspective(aspect);
-
-        // Итоговая матрица: projection × view × model.
-        const Matrix4 viewModel = multiply(view, model);
-        const Matrix4 mvp = multiply(projection, viewModel);
-
-        vkCmdPushConstants(
-            commandBuffers_[i],
-            pipelineLayout_,
-            VK_SHADER_STAGE_VERTEX_BIT,
-            0,
-            sizeof(Matrix4),
-            &mvp
-        );
-
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
         const VkDeviceSize offsets[] = {0};
 
@@ -1681,15 +1676,52 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
             offsets
         );
 
-        // Тест глубины: рисуем шесть граней в обратном порядке.
-        // Каждая грань содержит шесть вершин.
-        for (int face = 5; face >= 0; --face)
+        const float width = static_cast<float>(swapchainExtent_.width);
+        const float height = static_cast<float>(swapchainExtent_.height);
+        const float aspect = width / height;
+
+        const Matrix4 view = cameraView();
+        const Matrix4 projection = perspective(aspect);
+
+        for (const atlas::SceneObject& object : atlas::TEST_SCENE)
         {
+            const float objectAngle = angle + object.rotationOffset;
+
+            const Matrix4 rotation = multiply(
+                rotationX(-0.35f),
+                rotationY(objectAngle)
+            );
+
+            const Matrix4 position = translation(
+                object.x,
+                object.y,
+                object.z
+            );
+
+            const Matrix4 model = multiply(
+                position,
+                multiply(rotation, uniformScale(object.scale))
+            );
+
+            const Matrix4 mvp = multiply(
+                projection,
+                multiply(view, model)
+            );
+
+            vkCmdPushConstants(
+                commandBuffers_[i],
+                pipelineLayout_,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(Matrix4),
+                &mvp
+            );
+
             vkCmdDraw(
                 commandBuffers_[i],
-                6,                              // Вершин на грань
-                1,                              // Один экземпляр
-                static_cast<uint32_t>(face * 6), // Первая вершина грани
+                CUBE_VERTEX_COUNT,
+                1,
+                0,
                 0
             );
         }

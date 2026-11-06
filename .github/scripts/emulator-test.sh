@@ -32,7 +32,8 @@ check_screen() {
   for attempt in 1 2 3 4 5; do
     adb shell screencap -p /sdcard/atlas.png
     adb pull /sdcard/atlas.png atlas-screen.png
-    if python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}" > screen-check.log 2>&1; then
+    if python3 .github/scripts/check-screen.py atlas-screen.png "${1:-current}" > screen-check.log 2>&1 &&
+       python3 .github/scripts/check-grid.py atlas-screen.png >> screen-check.log 2>&1; then
       cat screen-check.log
       if [ "${1:-current}" != current ]; then cp atlas-screen.png "$1.png"; fi
       return 0
@@ -55,7 +56,7 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.12/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.13/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
@@ -99,6 +100,8 @@ PYRATE
 adb exec-out screencap -p > motion-before.png
 sleep 2
 adb exec-out screencap -p > motion-after.png
+python3 .github/scripts/check-grid.py motion-before.png
+python3 .github/scripts/check-grid.py motion-after.png
 python3 - <<'PYMOTION'
 from PIL import Image, ImageChops
 before = Image.open('motion-before.png').convert('RGB')
