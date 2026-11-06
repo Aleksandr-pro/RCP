@@ -54,6 +54,11 @@ PYIMAGE
   echo "::error title=Image check::$detail"
   return 1
 }
+# Install the previous release first to verify a real in-place upgrade.
+adb install -r reference-0.11/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n "$package/android.app.NativeActivity"
+sleep 4
+[ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"

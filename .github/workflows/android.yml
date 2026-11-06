@@ -88,6 +88,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Check out ATLAS 0.11 for update testing
+        uses: actions/checkout@v4
+        with:
+          ref: ef17a2d5d5bf25aebec5be6d87e45dfd2ad9de4a
+          path: reference-0.11
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -95,6 +100,11 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
+      - name: Build ATLAS 0.11 emulator APK
+        working-directory: reference-0.11/ATLAS
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: ./gradlew assembleDebug
       - name: Add frame tracing to the emulator-only build
         run: |
           python3 - <<'PYCODE'
