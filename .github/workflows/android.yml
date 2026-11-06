@@ -111,6 +111,12 @@ jobs:
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "draw");\n')
           path.write_text(text)
+          path = Path('ATLAS/app/src/main/java/com/atlas/engine/AtlasActivity.java')
+          text = path.read_text()
+          needle = '            }\n        });\n    }\n}'
+          assert text.count(needle) == 1
+          text = text.replace(needle, '            }\n            android.util.Log.i("ATLAS_TEST_UI", fpsView.getText().toString().replace("\\n", " | "));\n        });\n    }\n}')
+          path.write_text(text)
           PYCODE
       - name: Build emulator APK
         working-directory: ATLAS

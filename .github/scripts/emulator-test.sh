@@ -19,12 +19,10 @@ trap report_failure EXIT
 package=com.atlas.engine
 check_fps_overlay() {
   local label="$1"
-  adb shell uiautomator dump /sdcard/atlas-ui.xml >/dev/null
-  adb pull /sdcard/atlas-ui.xml "fps-${label}.xml" >/dev/null
   adb exec-out screencap -p > "fps-${label}.png"
-  adb logcat -d -s ATLAS:I '*:S' > "fps-${label}-log.txt"
-  if ! python3 .github/scripts/check-fps-overlay.py "fps-${label}.xml" "fps-${label}.png" "fps-${label}-log.txt" > fps-check-error.txt 2>&1; then
-    detail=$(cat fps-check-error.txt "fps-${label}.xml" | tail -c 8000 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  adb logcat -d -s ATLAS:I ATLAS_TEST_UI:I '*:S' > "fps-${label}-log.txt"
+  if ! python3 .github/scripts/check-fps-overlay.py "fps-${label}.png" "fps-${label}-log.txt" > fps-check-error.txt 2>&1; then
+    detail=$(cat fps-check-error.txt | tail -c 8000 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
     echo "::error title=FPS overlay check::$detail"
     return 1
   fi
