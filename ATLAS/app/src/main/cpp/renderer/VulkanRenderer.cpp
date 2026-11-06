@@ -1,4 +1,5 @@
 #include "VulkanRenderer.h"
+#include "../scene/TestScene.h"
 
 #include <android/log.h>
 
@@ -1682,57 +1683,47 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
         const Matrix4 view = cameraView();
         const Matrix4 projection = perspective(aspect);
 
-        constexpr float spacing = 0.68f;
-        constexpr float cubeSize = 0.42f;
-
-        for (int row = -1; row <= 1; ++row)
+        for (const atlas::SceneObject& object : atlas::TEST_SCENE)
         {
-            for (int column = -1; column <= 1; ++column)
-            {
-                // Небольшая разница углов помогает увидеть,
-                // что каждый объект получает собственную матрицу.
-                const float objectAngle =
-                    angle + static_cast<float>(row + column) * 0.15f;
+            const float objectAngle = angle + object.rotationOffset;
 
-                const Matrix4 rotation = multiply(
-                    rotationX(-0.35f),
-                    rotationY(objectAngle)
-                );
+            const Matrix4 rotation = multiply(
+                rotationX(-0.35f),
+                rotationY(objectAngle)
+            );
 
-                const Matrix4 position = translation(
-                    static_cast<float>(column) * spacing,
-                    static_cast<float>(row) * spacing,
-                    0.0f
-                );
+            const Matrix4 position = translation(
+                object.x,
+                object.y,
+                object.z
+            );
 
-                // Сначала масштаб, затем поворот, затем перемещение.
-                const Matrix4 model = multiply(
-                    position,
-                    multiply(rotation, uniformScale(cubeSize))
-                );
+            const Matrix4 model = multiply(
+                position,
+                multiply(rotation, uniformScale(object.scale))
+            );
 
-                const Matrix4 mvp = multiply(
-                    projection,
-                    multiply(view, model)
-                );
+            const Matrix4 mvp = multiply(
+                projection,
+                multiply(view, model)
+            );
 
-                vkCmdPushConstants(
-                    commandBuffers_[i],
-                    pipelineLayout_,
-                    VK_SHADER_STAGE_VERTEX_BIT,
-                    0,
-                    sizeof(Matrix4),
-                    &mvp
-                );
+            vkCmdPushConstants(
+                commandBuffers_[i],
+                pipelineLayout_,
+                VK_SHADER_STAGE_VERTEX_BIT,
+                0,
+                sizeof(Matrix4),
+                &mvp
+            );
 
-                vkCmdDraw(
-                    commandBuffers_[i],
-                    CUBE_VERTEX_COUNT,
-                    1,
-                    0,
-                    0
-                );
-            }
+            vkCmdDraw(
+                commandBuffers_[i],
+                CUBE_VERTEX_COUNT,
+                1,
+                0,
+                0
+            );
         }
 
         vkCmdEndRenderPass(commandBuffers_[i]);
