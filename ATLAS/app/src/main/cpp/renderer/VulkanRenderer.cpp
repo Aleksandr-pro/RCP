@@ -184,6 +184,11 @@ bool VulkanRenderer::isInitialized() const
     return initialized_;
 }
 
+bool VulkanRenderer::isSwapchainOutOfDate() const
+{
+    return swapchainOutOfDate_;
+}
+
 bool VulkanRenderer::initialize(
     ANativeWindow* window,
     AAssetManager* assetManager
@@ -1647,8 +1652,15 @@ bool VulkanRenderer::createSyncObjects()
 
 bool VulkanRenderer::drawFrame()
 {
+    swapchainOutOfDate_ = false;
+
     if (!initialized_)
     {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: попытка рисования до инициализации."
+        );
         return false;
     }
 
@@ -1665,7 +1677,8 @@ bool VulkanRenderer::drawFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        logInfo("Vulkan: swapchain устарел при получении кадра.");
+        swapchainOutOfDate_ = true;
+        logInfo("Vulkan: swapchain устарел при получении изображения.");
         return false;
     }
 
@@ -1675,6 +1688,13 @@ bool VulkanRenderer::drawFrame()
     {
         checkResult(result, "vkAcquireNextImageKHR");
         return false;
+    }
+
+    if (acquireSuboptimal)
+    {
+        logInfo(
+            "Vulkan: swapchain неоптимален при получении изображения."
+        );
     }
 
     VkPipelineStageFlags waitStage =
@@ -1710,31 +1730,28 @@ bool VulkanRenderer::drawFrame()
     presentInfo.pSwapchains = &swapchain_;
     presentInfo.pImageIndices = &imageIndex;
 
-    result = vkQueuePresentKHR(queue_, &presentInfo);
+    const VkResult presentResult =
+        vkQueuePresentKHR(queue_, &presentInfo);
 
-    // Для первой диагностической версии ждём завершения очереди.
-    // Для полноценного игрового цикла заменим это на нормальную
-    // многокадровую синхронизацию.
-    const VkResult idleResult = vkQueueWaitIdle(queue_);
-
-    if (!checkResult(idleResult, "vkQueueWaitIdle"))
+    // Текущая диагностическая версия обрабатывает кадры
+    // последовательно. Для игрового цикла это будет заменено.
+    if (!checkResult(vkQueueWaitIdle(queue_), "vkQueueWaitIdle"))
     {
         return false;
     }
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        swapchainOutOfDate_ = true;
         logInfo("Vulkan: swapchain устарел при выводе кадра.");
         return false;
     }
 
-    if (result == VK_SUBOPTIMAL_KHR || acquireSuboptimal)
+    if (presentResult == VK_SUBOPTIMAL_KHR)
     {
-        logInfo("Vulkan: swapchain требует обновления.");
-        return false;
+        logInfo("Vulkan: кадр выведен, но swapchain неоптимален.");
     }
-
-    if (!checkResult(result, "vkQueuePresentKHR"))
+    else if (!checkResult(presentResult, "vkQueuePresentKHR"))
     {
         return false;
     }
@@ -1746,6 +1763,7 @@ bool VulkanRenderer::drawFrame()
 void VulkanRenderer::shutdown()
 {
     initialized_ = false;
+    swapchainOutOfDate_ = false;
 
     if (device_ != VK_NULL_HANDLE)
     {
