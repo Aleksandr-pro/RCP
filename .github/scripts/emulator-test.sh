@@ -62,6 +62,24 @@ grep -q 'Vulkan: буфер вершин создан и заполнен' atlas
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
+sleep 4
+adb logcat -d -v epoch -s ATLAS_TEST:I '*:S' > atlas-frame-rate.txt
+python3 - <<'PYRATE'
+import re
+from pathlib import Path
+times = []
+for line in Path('atlas-frame-rate.txt').read_text().splitlines():
+    if 'update angle=' in line:
+        match = re.match(r'\s*(\d+\.\d+)', line)
+        if match:
+            times.append(float(match.group(1)))
+assert len(times) >= 5, f'Too few animation updates recorded: {len(times)}'
+times = [t for t in times if t >= times[-1] - 3]
+assert len(times) >= 5, f'Too few recent animation updates: {len(times)}'
+intervals = [b - a for a, b in zip(times, times[1:])]
+print(f'Animation updates: {len(times)} over {times[-1] - times[0]:.3f}s; minimum interval {min(intervals):.3f}s')
+assert min(intervals) >= 0.030, 'Animation updates exceed the expected frame limit'
+PYRATE
 adb exec-out screencap -p > motion-before.png
 sleep 2
 adb exec-out screencap -p > motion-after.png

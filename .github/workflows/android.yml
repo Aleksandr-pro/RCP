@@ -142,6 +142,7 @@ jobs:
             atlas-log.txt
             atlas-errors.txt
             atlas-frame-test.txt
+            atlas-frame-rate.txt
             motion-before.png
             motion-after.png
             atlas-system-log.txt
