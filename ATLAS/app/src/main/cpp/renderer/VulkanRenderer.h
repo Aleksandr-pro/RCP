@@ -55,7 +55,7 @@ private:
     );
     bool createImageViews();
     bool createFramebuffers();
-    bool createVertexBuffer();
+    bool createVertexBuffer(AAssetManager* assetManager);
     bool createCommandResources();
     bool recordCommandBuffers(
         float angleY,
@@ -94,6 +94,7 @@ private:
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
+    uint32_t vertexCount_ = 0;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
 
     VkSemaphore imageAvailable_ = VK_NULL_HANDLE;

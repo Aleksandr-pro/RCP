@@ -56,7 +56,7 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.17/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.18/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
@@ -71,7 +71,8 @@ adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-initial-trace.txt
 grep -q 'update angle=' atlas-initial-trace.txt
-grep -q 'scene draw count=9' atlas-initial-trace.txt
+grep -q 'scene draw count=9 vertices=18' atlas-initial-trace.txt
+grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18' atlas-log.txt
 grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt

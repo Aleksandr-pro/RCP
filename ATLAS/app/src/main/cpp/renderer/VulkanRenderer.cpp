@@ -8,6 +8,9 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <locale>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace
@@ -19,6 +22,173 @@ namespace
         float position[3];
         float color[3];
     };
+
+    bool loadMesh(
+        AAssetManager* assetManager,
+        const char* path,
+        std::vector<Vertex>& vertices
+    )
+    {
+        constexpr off_t MAX_FILE_SIZE = 1024 * 1024;
+        constexpr size_t MAX_VERTICES = 30000;
+
+        vertices.clear();
+
+        if (assetManager == nullptr || path == nullptr)
+        {
+            return false;
+        }
+
+        AAsset* asset = AAssetManager_open(
+            assetManager,
+            path,
+            AASSET_MODE_STREAMING
+        );
+
+        if (asset == nullptr)
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "Модель не найдена: %s",
+                path
+            );
+            return false;
+        }
+
+        const off_t length = AAsset_getLength(asset);
+
+        if (length <= 0 || length > MAX_FILE_SIZE)
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "Некорректный размер модели %s: %lld",
+                path,
+                static_cast<long long>(length)
+            );
+
+            AAsset_close(asset);
+            return false;
+        }
+
+        std::string contents(static_cast<size_t>(length), '\0');
+        size_t totalRead = 0;
+
+        while (totalRead < contents.size())
+        {
+            const int bytesRead = AAsset_read(
+                asset,
+                &contents[totalRead],
+                contents.size() - totalRead
+            );
+
+            if (bytesRead <= 0)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Не удалось полностью прочитать модель: %s",
+                    path
+                );
+
+                AAsset_close(asset);
+                return false;
+            }
+
+            totalRead += static_cast<size_t>(bytesRead);
+        }
+
+        AAsset_close(asset);
+
+        std::istringstream input(contents);
+        input.imbue(std::locale::classic());
+
+        while (true)
+        {
+            // Пропускаем пробелы и пустые строки.
+            input >> std::ws;
+
+            if (input.eof())
+            {
+                break;
+            }
+
+            Vertex vertex{};
+
+            if (!(input
+                >> vertex.position[0]
+                >> vertex.position[1]
+                >> vertex.position[2]
+                >> vertex.color[0]
+                >> vertex.color[1]
+                >> vertex.color[2]))
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Ошибка данных модели: %s",
+                    path
+                );
+                vertices.clear();
+                return false;
+            }
+
+            for (int i = 0; i < 3; ++i)
+            {
+                if (!std::isfinite(vertex.position[i]) ||
+                    !std::isfinite(vertex.color[i]) ||
+                    vertex.color[i] < 0.0f ||
+                    vertex.color[i] > 1.0f)
+                {
+                    __android_log_print(
+                        ANDROID_LOG_ERROR,
+                        LOG_TAG,
+                        "Недопустимая вершина модели: %s",
+                        path
+                    );
+                    vertices.clear();
+                    return false;
+                }
+            }
+
+            if (vertices.size() >= MAX_VERTICES)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Слишком много вершин в модели: %s",
+                    path
+                );
+                vertices.clear();
+                return false;
+            }
+
+            vertices.push_back(vertex);
+        }
+
+        if (vertices.empty() || vertices.size() % 3 != 0)
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "Модель пуста или число вершин не кратно трём: %s",
+                path
+            );
+            vertices.clear();
+            return false;
+        }
+
+        __android_log_print(
+            ANDROID_LOG_INFO,
+            LOG_TAG,
+            "Модель загружена: %s, вершин: %u",
+            path,
+            static_cast<unsigned>(vertices.size())
+        );
+
+        return true;
+    }
 
     // Матрица 4×4. Элементы хранятся по столбцам,
     // как ожидает GLSL для mat4.
@@ -122,67 +292,6 @@ namespace
             0.0f,           0.0f,  depthOffset, 0.0f
         }};
     }
-
-    // Куб размером 1×1×1 с центром в начале координат.
-    // Каждая грань состоит из двух треугольников — шести вершин.
-    constexpr Vertex CUBE_VERTICES[] = {
-        // Передняя грань: зелёная, z = -0.5
-        {{-0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
-
-        // Задняя грань: синяя, z = 0.5
-        {{-0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-
-        {{-0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
-
-        // Левая грань: красная, x = -0.5
-        {{-0.5f, -0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
-
-        // Правая грань: оранжевая, x = 0.5
-        {{ 0.5f, -0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
-
-        {{ 0.5f, -0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
-
-        // Грань y = -0.5: голубая
-        {{-0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
-
-        {{-0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
-
-        // Грань y = 0.5: фиолетовая
-        {{-0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}},
-
-        {{-0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}}
-    };
-
-    constexpr uint32_t CUBE_VERTEX_COUNT =
-        sizeof(CUBE_VERTICES) / sizeof(CUBE_VERTICES[0]);
 
     void logInfo(const char* message)
     {
@@ -327,7 +436,7 @@ bool VulkanRenderer::initialize(
         !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
         !createFramebuffers() ||
-        !createVertexBuffer() ||
+        !createVertexBuffer(assetManager) ||
         !createCommandResources() ||
         !createSyncObjects())
     {
@@ -1444,9 +1553,23 @@ bool VulkanRenderer::createFramebuffers()
     return true;
 }
 
-bool VulkanRenderer::createVertexBuffer()
+bool VulkanRenderer::createVertexBuffer(
+    AAssetManager* assetManager
+)
 {
-    const VkDeviceSize bufferSize = sizeof(CUBE_VERTICES);
+    std::vector<Vertex> vertices;
+
+    if (!loadMesh(
+            assetManager,
+            "models/pyramid.atlasmesh",
+            vertices
+        ))
+    {
+        return false;
+    }
+
+    const VkDeviceSize bufferSize =
+        static_cast<VkDeviceSize>(vertices.size() * sizeof(Vertex));
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1564,9 +1687,14 @@ bool VulkanRenderer::createVertexBuffer()
         return false;
     }
 
-    std::memcpy(mappedMemory, CUBE_VERTICES, sizeof(CUBE_VERTICES));
+    std::memcpy(
+        mappedMemory,
+        vertices.data(),
+        static_cast<size_t>(bufferSize)
+    );
 
     vkUnmapMemory(device_, vertexBufferMemory_);
+    vertexCount_ = static_cast<uint32_t>(vertices.size());
 
     logInfo("Vulkan: буфер вершин создан и заполнен.");
     return true;
@@ -1727,7 +1855,7 @@ bool VulkanRenderer::recordCommandBuffers(
 
             vkCmdDraw(
                 commandBuffers_[i],
-                CUBE_VERTEX_COUNT,
+                vertexCount_,
                 1,
                 0,
                 0
@@ -1910,6 +2038,7 @@ void VulkanRenderer::shutdown()
 {
     initialized_ = false;
     swapchainOutOfDate_ = false;
+    vertexCount_ = 0;
 
     if (device_ != VK_NULL_HANDLE)
     {
