@@ -23,10 +23,12 @@ namespace
         bool hasFocus = false;
 
         float angle = 0.55f;
+        float tiltAngle = -0.35f;
 
         bool touchActive = false;
         int32_t activePointerId = -1;
         float lastTouchX = 0.0f;
+        float lastTouchY = 0.0f;
 
         std::chrono::steady_clock::time_point lastFrameTime{};
         std::chrono::steady_clock::time_point nextFrameTime{};
@@ -343,7 +345,10 @@ namespace
             fullTurn
         );
 
-        if (!state->renderer.updateRotation(state->angle))
+        if (!state->renderer.updateRotation(
+                state->angle,
+                state->tiltAngle
+            ))
         {
             logError("ATLAS: не удалось обновить команды кадра.");
             state->renderer.shutdown();
@@ -400,6 +405,7 @@ namespace
                 state->touchActive = true;
                 state->activePointerId = AMotionEvent_getPointerId(event, 0);
                 state->lastTouchX = AMotionEvent_getX(event, 0);
+                state->lastTouchY = AMotionEvent_getY(event, 0);
                 return 1;
             }
 
@@ -421,8 +427,13 @@ namespace
                     }
 
                     const float currentX = AMotionEvent_getX(event, i);
+                    const float currentY = AMotionEvent_getY(event, i);
+
                     const float deltaX = currentX - state->lastTouchX;
+                    const float deltaY = currentY - state->lastTouchY;
+
                     state->lastTouchX = currentX;
+                    state->lastTouchY = currentY;
 
                     const int32_t windowWidth =
                         ANativeWindow_getWidth(app->window);
@@ -438,6 +449,22 @@ namespace
                             fullTurn;
 
                         state->angle = std::fmod(state->angle, fullTurn);
+                    }
+
+                    const int32_t windowHeight =
+                        ANativeWindow_getHeight(app->window);
+
+                    if (windowHeight > 0)
+                    {
+                        // Полный проход по высоте окна — примерно 180 градусов.
+                        constexpr float halfTurn = 3.14159265f;
+
+                        state->tiltAngle +=
+                            deltaY / static_cast<float>(windowHeight) * halfTurn;
+
+                        // Не даём углу бесконечно расти.
+                        constexpr float fullTurn = 6.2831853f;
+                        state->tiltAngle = std::fmod(state->tiltAngle, fullTurn);
                     }
 
                     return 1;

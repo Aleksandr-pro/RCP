@@ -20,6 +20,19 @@ for width in (320, 640):
     assert any(dx > 0 for dx in movements), f'No right swipe at width {width}'
     assert any(dx < 0 for dx in movements), f'No left swipe at width {width}'
 assert ('lost focus active=1' in log or 'end action=3 active=1' in log), 'Neither focus loss nor Android cancellation occurred during an active touch'
+vertical_pattern = r'move2 dx=([-0-9.]+) dy=([-0-9.]+) width=(\d+) height=(\d+) before=([-0-9.]+) after=([-0-9.]+)'
+vertical = [(float(dx), float(dy), int(w), int(h), float(before), float(after))
+            for dx, dy, w, h, before, after in re.findall(vertical_pattern, log)]
+assert vertical, 'No vertical movement events received'
+for dx, dy, width, height, before, after in vertical:
+    assert height > 0
+    expected = math.fmod(before + dy / height * 3.14159265, 6.2831853)
+    assert abs(expected - after) < 0.001, (dx, dy, width, height, before, after, expected)
+for width in (320, 640):
+    movements = [(dx, dy) for dx, dy, w, _, _, _ in vertical if w == width]
+    assert any(dy > 0 for dx, dy in movements), f'No down swipe at width {width}'
+    assert any(dy < 0 for dx, dy in movements), f'No up swipe at width {width}'
+    assert any(abs(dx) > 0.1 and abs(dy) > 0.1 for dx, dy in movements), f'No diagonal gesture at width {width}'
 assert 'focus reset active=0 id=-1' in log, 'Active touch was not reset on focus loss'
 after_focus = log.rsplit('focus reset active=0 id=-1', 1)[1]
 assert re.search(pattern, after_focus), 'No touch movement after resuming'
@@ -44,4 +57,9 @@ for orientation in ('portrait', 'landscape'):
     print(f'{orientation}: right swipe difference={right_diff:.2%}, opposite swipe remaining difference={left_diff:.2%}')
     assert right_diff > 0.005, f'Right swipe did not visibly rotate the scene: {orientation}'
     assert left_diff < 0.02, f'Opposite swipe did not restore the angle: {orientation}'
+    for direction in ('down', 'diagonal'):
+        image = Image.open(f'scene-comparison/touch-{orientation}-{direction}.png').convert('RGB')
+        difference = changed(image)
+        print(f'{orientation}: {direction} swipe difference={difference:.2%}')
+        assert difference > 0.005, f'{direction} swipe did not visibly rotate the scene: {orientation}'
 print(f'Touch test: {len(events)} move events; focus reset and resumed gesture passed')
