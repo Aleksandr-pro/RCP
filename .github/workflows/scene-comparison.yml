@@ -37,6 +37,24 @@ jobs:
               assert source.count('constexpr float rotationSpeed = 0.8f;') == 1
               path.write_text(source.replace('constexpr float rotationSpeed = 0.8f;',
                                              'constexpr float rotationSpeed = 0.0f;'))
+          path = Path('ATLAS/app/src/main/cpp/main.cpp')
+          source = path.read_text()
+          needle = '                const float deltaX = currentX - state->lastTouchX;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, needle + '\n                const float testBefore = state->angle;')
+          needle = '                    state->angle = std::fmod(state->angle, fullTurn);'
+          assert source.count(needle) == 1
+          source = source.replace(needle, needle + '\n                    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move dx=%.4f width=%d before=%.6f after=%.6f", deltaX, windowWidth, testBefore, state->angle);')
+          needle = '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                state->touchActive = false;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "end action=%d active=%d", actionMasked, state->touchActive);\n                state->touchActive = false;')
+          needle = '                state->hasFocus = false;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);')
+          needle = '                state->activePointerId = -1;\n                logInfo("ATLAS: окно потеряло фокус.");'
+          assert source.count(needle) == 1
+          source = source.replace(needle, '                state->activePointerId = -1;\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "focus reset active=%d id=%d", state->touchActive, state->activePointerId);\n                logInfo("ATLAS: окно потеряло фокус.");')
+          path.write_text(source)
           PYCODE
           (cd reference-0.13/ATLAS && ./gradlew assembleDebug)
           (cd ATLAS && ./gradlew assembleDebug)

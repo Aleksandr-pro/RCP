@@ -1,4 +1,5 @@
 #include <android/log.h>
+#include <android/input.h>
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
 #include <jni.h>
@@ -22,6 +23,10 @@ namespace
         bool hasFocus = false;
 
         float angle = 0.55f;
+
+        bool touchActive = false;
+        int32_t activePointerId = -1;
+        float lastTouchX = 0.0f;
 
         std::chrono::steady_clock::time_point lastFrameTime{};
         std::chrono::steady_clock::time_point nextFrameTime{};
@@ -370,6 +375,115 @@ namespace
         }
     }
 
+    int32_t handleInput(android_app* app, AInputEvent* event)
+    {
+        if (app == nullptr || event == nullptr)
+        {
+            return 0;
+        }
+
+        auto* state = static_cast<EngineState*>(app->userData);
+
+        if (state == nullptr ||
+            AInputEvent_getType(event) != AINPUT_EVENT_TYPE_MOTION)
+        {
+            return 0;
+        }
+
+        const int32_t action = AMotionEvent_getAction(event);
+        const int32_t actionMasked = action & AMOTION_EVENT_ACTION_MASK;
+
+        switch (actionMasked)
+        {
+            case AMOTION_EVENT_ACTION_DOWN:
+            {
+                state->touchActive = true;
+                state->activePointerId = AMotionEvent_getPointerId(event, 0);
+                state->lastTouchX = AMotionEvent_getX(event, 0);
+                return 1;
+            }
+
+            case AMOTION_EVENT_ACTION_MOVE:
+            {
+                if (!state->touchActive || app->window == nullptr)
+                {
+                    return 0;
+                }
+
+                const size_t pointerCount = AMotionEvent_getPointerCount(event);
+
+                for (size_t i = 0; i < pointerCount; ++i)
+                {
+                    if (AMotionEvent_getPointerId(event, i) !=
+                        state->activePointerId)
+                    {
+                        continue;
+                    }
+
+                    const float currentX = AMotionEvent_getX(event, i);
+                    const float deltaX = currentX - state->lastTouchX;
+                    state->lastTouchX = currentX;
+
+                    const int32_t windowWidth =
+                        ANativeWindow_getWidth(app->window);
+
+                    if (windowWidth > 0)
+                    {
+                        // Проведение через всю ширину окна примерно
+                        // соответствует одному полному обороту.
+                        constexpr float fullTurn = 6.2831853f;
+
+                        state->angle +=
+                            deltaX / static_cast<float>(windowWidth) *
+                            fullTurn;
+
+                        state->angle = std::fmod(state->angle, fullTurn);
+                    }
+
+                    return 1;
+                }
+
+                state->touchActive = false;
+                state->activePointerId = -1;
+                return 0;
+            }
+
+            case AMOTION_EVENT_ACTION_POINTER_UP:
+            {
+                const int32_t pointerIndex =
+                    (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >>
+                    AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+
+                const size_t pointerCount = AMotionEvent_getPointerCount(event);
+
+                if (pointerIndex >= 0 &&
+                    static_cast<size_t>(pointerIndex) < pointerCount &&
+                    AMotionEvent_getPointerId(
+                        event,
+                        static_cast<size_t>(pointerIndex)
+                    ) == state->activePointerId)
+                {
+                    state->touchActive = false;
+                    state->activePointerId = -1;
+                }
+
+                return 1;
+            }
+
+            case AMOTION_EVENT_ACTION_UP:
+            case AMOTION_EVENT_ACTION_CANCEL:
+            {
+                state->touchActive = false;
+                state->activePointerId = -1;
+                return 1;
+            }
+
+            default:
+                // Дополнительные пальцы пока не используются.
+                return state->touchActive ? 1 : 0;
+        }
+    }
+
     void handleAppCommand(android_app* app, int32_t command)
     {
         auto* state = static_cast<EngineState*>(app->userData);
@@ -410,6 +524,8 @@ namespace
 
             case APP_CMD_LOST_FOCUS:
                 state->hasFocus = false;
+                state->touchActive = false;
+                state->activePointerId = -1;
                 logInfo("ATLAS: окно потеряло фокус.");
                 break;
 
@@ -468,6 +584,7 @@ void android_main(android_app* app)
 
     app->userData = &state;
     app->onAppCmd = handleAppCommand;
+    app->onInputEvent = handleInput;
 
     constexpr auto frameInterval = std::chrono::nanoseconds(33333333);
 
