@@ -83,7 +83,8 @@ PYORIENTATION
 # for this test. This isolates the gesture response from normal animation.
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/atlas-014-normal.apk"
-adb shell settings put system user_rotation 0
+adb shell settings put system accelerometer_rotation 0
+adb shell wm user-rotation lock 0
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 6
@@ -97,7 +98,7 @@ sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
 adb logcat -c
-adb shell settings put system user_rotation 1
+adb shell wm user-rotation lock 1
 sleep 5
 wait_orientation landscape
 adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
