@@ -1803,13 +1803,6 @@ bool VulkanRenderer::drawFrame()
         return false;
     }
 
-    if (acquireSuboptimal)
-    {
-        logInfo(
-            "Vulkan: swapchain неоптимален при получении изображения."
-        );
-    }
-
     VkPipelineStageFlags waitStage =
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -1860,11 +1853,8 @@ bool VulkanRenderer::drawFrame()
         return false;
     }
 
-    if (presentResult == VK_SUBOPTIMAL_KHR)
-    {
-        logInfo("Vulkan: кадр выведен, но swapchain неоптимален.");
-    }
-    else if (!checkResult(presentResult, "vkQueuePresentKHR"))
+    if (presentResult != VK_SUBOPTIMAL_KHR &&
+        !checkResult(presentResult, "vkQueuePresentKHR"))
     {
         return false;
     }

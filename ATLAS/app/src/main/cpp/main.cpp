@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 
 #include "renderer/VulkanRenderer.h"
 
@@ -22,6 +23,8 @@ namespace
 
         std::chrono::steady_clock::time_point lastFrameTime{};
         std::chrono::steady_clock::time_point nextFrameTime{};
+        std::chrono::steady_clock::time_point statsStartTime{};
+        uint32_t presentedFrames = 0;
     };
 
     void logInfo(const char* message)
@@ -140,6 +143,55 @@ namespace
         }
     }
 
+    void recordPresentedFrame(EngineState* state)
+    {
+        if (state == nullptr)
+        {
+            return;
+        }
+
+        const auto now = std::chrono::steady_clock::now();
+
+        // Защита на случай, если статистика ещё не была запущена.
+        if (state->statsStartTime ==
+            std::chrono::steady_clock::time_point{})
+        {
+            state->statsStartTime = now;
+            state->presentedFrames = 0;
+        }
+
+        ++state->presentedFrames;
+
+        const double elapsedSeconds =
+            std::chrono::duration<double>(
+                now - state->statsStartTime
+            ).count();
+
+        // Пишем статистику не чаще одного раза примерно в 5 секунд.
+        if (elapsedSeconds >= 5.0)
+        {
+            const double fps =
+                static_cast<double>(state->presentedFrames) /
+                elapsedSeconds;
+
+            const double averageIntervalMs =
+                1000.0 * elapsedSeconds /
+                static_cast<double>(state->presentedFrames);
+
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                LOG_TAG,
+                "ATLAS stats: FPS=%.1f, средний интервал=%.1f мс, кадров=%u",
+                fps,
+                averageIntervalMs,
+                state->presentedFrames
+            );
+
+            state->statsStartTime = now;
+            state->presentedFrames = 0;
+        }
+    }
+
     void updateAndDraw(android_app* app, EngineState* state)
     {
         if (app == nullptr ||
@@ -186,6 +238,7 @@ namespace
 
         if (state->renderer.drawFrame())
         {
+            recordPresentedFrame(state);
             return;
         }
 
@@ -227,6 +280,8 @@ namespace
                 state->hasFocus = true;
                 state->lastFrameTime = std::chrono::steady_clock::now();
                 state->nextFrameTime = state->lastFrameTime;
+                state->statsStartTime = state->lastFrameTime;
+                state->presentedFrames = 0;
                 logInfo("ATLAS: окно получило фокус.");
                 break;
 
@@ -371,9 +426,18 @@ void android_main(android_app* app)
         {
             updateAndDraw(app, &state);
 
-            // Не пытаемся догонять пропущенные кадры.
-            state.nextFrameTime =
-                std::chrono::steady_clock::now() + frameInterval;
+            // Планируем следующий кадр относительно предыдущего срока,
+            // а не добавляем интервал после завершения обработки.
+            state.nextFrameTime += frameInterval;
+
+            const auto afterFrame = std::chrono::steady_clock::now();
+
+            if (state.nextFrameTime <= afterFrame)
+            {
+                // Если кадр занял слишком много времени, не пытаемся
+                // обработать накопившиеся кадры подряд.
+                state.nextFrameTime = afterFrame + frameInterval;
+            }
         }
     }
 
