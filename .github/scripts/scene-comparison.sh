@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+trap 'echo "::error::Scene comparison failed at line $LINENO: $BASH_COMMAND"' ERR
 mkdir -p scene-comparison
 package=com.atlas.engine
 adb shell settings put system accelerometer_rotation 0
@@ -97,4 +98,10 @@ sleep 5
 adb shell input swipe 140 180 460 180 700
 sleep 2
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
-python3 .github/scripts/check-touch.py
+if ! python3 .github/scripts/check-touch.py > scene-comparison/touch-check.txt 2>&1; then
+  detail=$(cat scene-comparison/touch-check.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Touch test::$detail"
+  grep 'ATLAS_TOUCH_TEST' scene-comparison/touch-log.txt | tail -n 25 | while IFS= read -r line; do echo "::notice::$line"; done
+  exit 1
+fi
+cat scene-comparison/touch-check.txt
