@@ -320,31 +320,6 @@ namespace
         const auto now = std::chrono::steady_clock::now();
         const auto workStartTime = now;
 
-        float deltaSeconds =
-            std::chrono::duration<float>(
-                now - state->lastFrameTime
-            ).count();
-
-        state->lastFrameTime = now;
-
-        // Ограничиваем скачок времени после задержки приложения.
-        if (deltaSeconds < 0.0f)
-        {
-            deltaSeconds = 0.0f;
-        }
-        else if (deltaSeconds > 0.1f)
-        {
-            deltaSeconds = 0.1f;
-        }
-
-        constexpr float rotationSpeed = 0.8f; // радиан в секунду
-        constexpr float fullTurn = 6.2831853f;
-
-        state->angle = std::fmod(
-            state->angle + rotationSpeed * deltaSeconds,
-            fullTurn
-        );
-
         if (!state->renderer.updateRotation(
                 state->angle,
                 state->tiltAngle
@@ -462,9 +437,14 @@ namespace
                         state->tiltAngle +=
                             deltaY / static_cast<float>(windowHeight) * halfTurn;
 
-                        // Не даём углу бесконечно расти.
-                        constexpr float fullTurn = 6.2831853f;
-                        state->tiltAngle = std::fmod(state->tiltAngle, fullTurn);
+                        // Ограничиваем наклон, чтобы камера не переворачивалась.
+                        constexpr float maxTilt = 1.2f;
+
+                        state->tiltAngle = std::clamp(
+                            state->tiltAngle,
+                            -maxTilt,
+                            maxTilt
+                        );
                     }
 
                     return 1;
