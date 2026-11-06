@@ -100,3 +100,51 @@ if ! python3 .github/scripts/check-touch.py > scene-comparison/touch-check.txt 2
   exit 1
 fi
 cat scene-comparison/touch-check.txt
+
+# Inject genuine Android multi-pointer MotionEvents as the emulator shell user.
+adb push "$RUNNER_TEMP/pinch.jar" /data/local/tmp/atlas-pinch.jar >/dev/null
+pinch() {
+  adb shell CLASSPATH=/data/local/tmp/atlas-pinch.jar app_process /system/bin PinchInput "$1" "$2" "$3"
+}
+adb shell am force-stop "$package"
+adb shell settings put system user_rotation 0
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+wait_orientation portrait
+adb logcat -c
+adb exec-out screencap -p > scene-comparison/pinch-before.png
+pinch out 320 640
+sleep 2
+adb exec-out screencap -p > scene-comparison/pinch-near.png
+pinch in 320 640
+sleep 2
+adb exec-out screencap -p > scene-comparison/pinch-far.png
+adb logcat -d -s ATLAS:I ATLAS_PINCH_TEST:I '*:S' > scene-comparison/pinch-portrait-log.txt
+adb shell am force-stop "$package"
+adb shell input keyevent KEYCODE_HOME
+adb shell settings put system user_rotation 1
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 8
+wait_orientation landscape
+adb logcat -c
+pinch out 640 320
+pinch hold 640 320 &
+pinch_pid=$!
+sleep 1
+adb shell input keyevent KEYCODE_HOME
+wait "$pinch_pid"
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+wait_orientation landscape
+pinch in 640 320
+sleep 2
+adb logcat -d -s ATLAS:I ATLAS_PINCH_TEST:I '*:S' > scene-comparison/pinch-landscape-log.txt
+if ! python3 .github/scripts/check-pinch.py > scene-comparison/pinch-check.txt 2>&1; then
+  detail=$(cat scene-comparison/pinch-check.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Pinch test::$detail"
+  grep 'ATLAS_PINCH_TEST' scene-comparison/pinch-landscape-log.txt | tail -n 25 | while IFS= read -r line; do echo "::notice::$line"; done
+  exit 1
+fi
+cat scene-comparison/pinch-check.txt
