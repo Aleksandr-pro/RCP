@@ -13,8 +13,9 @@ updates = re.findall(
 )
 assert updates, 'FPS view has not received numeric statistics'
 fps, interval, frames = updates[-1]
-expected = f'FPS={fps}, средний интервал={interval} мс, кадров={frames}'
-assert expected in log, f'Overlay values do not match an ATLAS statistics record: {expected}'
+expected = f'FPS={fps}, interval={interval}, frames={frames}'
+assert f'ATLAS_TEST_STATS: {expected}' in log, f'Overlay values do not match the values passed from the engine: {expected}'
+assert f'FPS={fps}, средний интервал={interval} мс,' in log, 'Overlay FPS and interval do not match the engine log'
 # NativeActivity renders Vulkan on the main window surface; verify the separate
 # FPS popup is actually visible in the top-left screen area, not just in the UI tree.
 image = Image.open(screen_path).convert('RGB')
