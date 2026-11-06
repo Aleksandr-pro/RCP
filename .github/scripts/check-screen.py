@@ -21,7 +21,8 @@ colors = set()
 for y in range(height // 10, height * 9 // 10):
     for x in range(width // 20, width * 19 // 20):
         r, g, b = image.getpixel((x, y))
-        if r > 140 or g > 150 or b > 150:
+        # Exclude the white/gray FPS overlay and system text, retaining colored cube faces.
+        if max(r, g, b) - min(r, g, b) > 30 and (r > 140 or g > 150 or b > 150):
             points.append((x, y))
             colors.add((r // 32, g // 32, b // 32))
 assert len(points) > width * height * 0.005, f"Colored figure not found: {len(points)} pixels"

@@ -17,6 +17,14 @@ report_failure() {
 }
 trap report_failure EXIT
 package=com.atlas.engine
+check_fps_overlay() {
+  local label="$1"
+  adb shell uiautomator dump /sdcard/atlas-ui.xml >/dev/null
+  adb pull /sdcard/atlas-ui.xml "fps-${label}.xml" >/dev/null
+  adb exec-out screencap -p > "fps-${label}.png"
+  adb logcat -d -s ATLAS:I '*:S' > "fps-${label}-log.txt"
+  python3 .github/scripts/check-fps-overlay.py "fps-${label}.xml" "fps-${label}.png" "fps-${label}-log.txt"
+}
 check_screen() {
   for attempt in 1 2 3 4 5; do
     adb shell screencap -p /sdcard/atlas.png
@@ -45,7 +53,7 @@ PYIMAGE
 }
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 for i in $(seq 1 30); do
   if adb logcat -d -s ATLAS_TEST:I '*:S' | grep -q 'update angle='; then break; fi
   sleep 2
@@ -95,6 +103,7 @@ fraction = sum(1 for p in diff.getdata() if max(p) > 20) / (diff.width * diff.he
 print(f'Animation: {fraction:.2%} of rendered-area pixels changed')
 assert fraction > 0.005, 'The cube did not visibly move'
 PYMOTION
+check_fps_overlay portrait
 adb shell input keyevent KEYCODE_HOME
 sleep 3
 # Preserve lifecycle and error logs before clearing the test trace.
@@ -114,20 +123,21 @@ if grep -q 'draw\|update angle=' atlas-frame-test.txt; then
   echo '::error::Rendering continued while in the background'
   exit 1
 fi
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 sleep 7
 check_screen
 adb logcat -d -s ATLAS:I '*:S' > atlas-resumed-log.txt
 grep 'ATLAS stats: FPS=' atlas-resumed-log.txt >> atlas-stats.txt
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-resumed-frames.txt
 grep -q 'update angle=' atlas-resumed-frames.txt
+check_fps_overlay resumed
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 1
 sleep 5
 if ! check_screen landscape; then
   echo '::warning::Checking whether a fresh landscape launch changes the result'
   adb shell am force-stop "$package"
-  adb shell am start -n "$package/android.app.NativeActivity"
+  adb shell am start -n "$package/.AtlasActivity"
   sleep 5
   if check_screen landscape-restart; then
     echo '::warning::Image check passes after a fresh landscape launch, but fails after rotation'
@@ -136,6 +146,9 @@ if ! check_screen landscape; then
   fi
   exit 1
 fi
+# Allow the statistics window to complete after a possible focus reset.
+sleep 3
+check_fps_overlay landscape
 adb shell settings put system user_rotation 3
 sleep 5
 check_screen landscape-reverse
@@ -175,11 +188,11 @@ grep -q 'приложение приостановлено' atlas-log.txt
 check_screen
 # Verify that a subsequent APK signed with the same test key installs as an update.
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb shell am force-stop "$package"
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 check_screen
 adb shell am force-stop "$package"

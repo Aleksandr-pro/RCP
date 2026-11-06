@@ -49,7 +49,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.11-debug
+          name: ATLAS-0.12-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -148,6 +148,9 @@ jobs:
             atlas-resumed-log.txt
             motion-before.png
             motion-after.png
+            fps-*.png
+            fps-*.xml
+            fps-*-log.txt
             atlas-system-log.txt
             atlas-screen.png
             portrait.png

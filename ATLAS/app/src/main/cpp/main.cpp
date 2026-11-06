@@ -1,6 +1,7 @@
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
 
 #include <chrono>
 #include <cmath>
@@ -143,7 +144,53 @@ namespace
         }
     }
 
-    void recordPresentedFrame(EngineState* state)
+    void updateFpsOverlay(android_app* app, float fps, float intervalMs, uint32_t frames)
+    {
+        if (app == nullptr || app->activity == nullptr)
+        {
+            return;
+        }
+
+        JavaVM* vm = app->activity->vm;
+        JNIEnv* env = nullptr;
+        const jint status = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+        const bool attached = status == JNI_EDETACHED;
+        if (attached && vm->AttachCurrentThread(&env, nullptr) != JNI_OK)
+        {
+            logError("ATLAS: не удалось подключиться к Java для FPS.");
+            return;
+        }
+        if (!attached && status != JNI_OK)
+        {
+            logError("ATLAS: не удалось получить Java-окружение для FPS.");
+            return;
+        }
+
+        jobject activity = app->activity->clazz;
+        jclass activityClass = env->GetObjectClass(activity);
+        jmethodID updateMethod = activityClass == nullptr ? nullptr :
+            env->GetMethodID(activityClass, "updateFps", "(FFI)V");
+        if (updateMethod != nullptr)
+        {
+            env->CallVoidMethod(activity, updateMethod, fps, intervalMs, static_cast<jint>(frames));
+        }
+        if (env->ExceptionCheck())
+        {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+            logError("ATLAS: не удалось обновить FPS на экране.");
+        }
+        if (activityClass != nullptr)
+        {
+            env->DeleteLocalRef(activityClass);
+        }
+        if (attached)
+        {
+            vm->DetachCurrentThread();
+        }
+    }
+
+    void recordPresentedFrame(android_app* app, EngineState* state)
     {
         if (state == nullptr)
         {
@@ -187,6 +234,9 @@ namespace
                 state->presentedFrames
             );
 
+            updateFpsOverlay(app, static_cast<float>(fps),
+                             static_cast<float>(averageIntervalMs),
+                             state->presentedFrames);
             state->statsStartTime = now;
             state->presentedFrames = 0;
         }
@@ -238,7 +288,7 @@ namespace
 
         if (state->renderer.drawFrame())
         {
-            recordPresentedFrame(state);
+            recordPresentedFrame(app, state);
             return;
         }
 
@@ -282,6 +332,7 @@ namespace
                 state->nextFrameTime = state->lastFrameTime;
                 state->statsStartTime = state->lastFrameTime;
                 state->presentedFrames = 0;
+                updateFpsOverlay(app, -1.0f, 0.0f, 0);
                 logInfo("ATLAS: окно получило фокус.");
                 break;
 
