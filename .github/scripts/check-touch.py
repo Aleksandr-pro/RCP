@@ -8,6 +8,9 @@ pattern = r'move dx=([-0-9.]+) width=(\d+) before=([-0-9.]+) after=([-0-9.]+)'
 events = [(float(dx), int(width), float(before), float(after))
           for dx, width, before, after in re.findall(pattern, log)]
 assert events, 'No touch movement was received'
+print('Captured widths:', sorted(set(w for _, w, _, _ in events)))
+for name in ('portrait', 'landscape'):
+    print(name, 'screenshot size:', Image.open(f'scene-comparison/touch-{name}-before.png').size)
 for dx, width, before, after in events:
     assert width > 0
     expected = math.fmod(before + dx / width * 6.2831853, 6.2831853)
