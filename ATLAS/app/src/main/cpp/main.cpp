@@ -3,6 +3,7 @@
 #include <android_native_app_glue.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -26,6 +27,15 @@ namespace
         std::chrono::steady_clock::time_point nextFrameTime{};
         std::chrono::steady_clock::time_point statsStartTime{};
         uint32_t presentedFrames = 0;
+
+        std::chrono::steady_clock::time_point lastPresentedTime{};
+
+        uint32_t measuredIntervals = 0;
+        uint32_t intervalsOver50Ms = 0;
+        double maxIntervalMs = 0.0;
+
+        double totalWorkMs = 0.0;
+        double maxWorkMs = 0.0;
     };
 
     void logInfo(const char* message)
@@ -190,7 +200,11 @@ namespace
         }
     }
 
-    void recordPresentedFrame(android_app* app, EngineState* state)
+    void recordPresentedFrame(
+        android_app* app,
+        EngineState* state,
+        double workMs
+    )
     {
         if (state == nullptr)
         {
@@ -199,23 +213,44 @@ namespace
 
         const auto now = std::chrono::steady_clock::now();
 
-        // Защита на случай, если статистика ещё не была запущена.
         if (state->statsStartTime ==
             std::chrono::steady_clock::time_point{})
         {
             state->statsStartTime = now;
-            state->presentedFrames = 0;
         }
 
+        // Первый кадр после сброса не имеет предыдущего интервала.
+        if (state->lastPresentedTime !=
+            std::chrono::steady_clock::time_point{})
+        {
+            const double intervalMs =
+                std::chrono::duration<double, std::milli>(
+                    now - state->lastPresentedTime
+                ).count();
+
+            ++state->measuredIntervals;
+
+            state->maxIntervalMs =
+                std::max(state->maxIntervalMs, intervalMs);
+
+            if (intervalMs > 50.0)
+            {
+                ++state->intervalsOver50Ms;
+            }
+        }
+
+        state->lastPresentedTime = now;
+
         ++state->presentedFrames;
+        state->totalWorkMs += workMs;
+        state->maxWorkMs = std::max(state->maxWorkMs, workMs);
 
         const double elapsedSeconds =
             std::chrono::duration<double>(
                 now - state->statsStartTime
             ).count();
 
-        // Пишем статистику не чаще одного раза примерно в 5 секунд.
-        if (elapsedSeconds >= 5.0)
+        if (elapsedSeconds >= 5.0 && state->presentedFrames > 0)
         {
             const double fps =
                 static_cast<double>(state->presentedFrames) /
@@ -225,20 +260,43 @@ namespace
                 1000.0 * elapsedSeconds /
                 static_cast<double>(state->presentedFrames);
 
+            const double averageWorkMs =
+                state->totalWorkMs /
+                static_cast<double>(state->presentedFrames);
+
             __android_log_print(
                 ANDROID_LOG_INFO,
                 LOG_TAG,
-                "ATLAS stats: FPS=%.1f, средний интервал=%.1f мс, кадров=%u",
+                "ATLAS stats: FPS=%.1f, средний интервал=%.1f мс, "
+                "макс. интервал=%.1f мс, свыше 50 мс=%u/%u, "
+                "работа кадра: средняя=%.2f мс, макс.=%.2f мс",
                 fps,
                 averageIntervalMs,
+                state->maxIntervalMs,
+                state->intervalsOver50Ms,
+                state->measuredIntervals,
+                averageWorkMs,
+                state->maxWorkMs
+            );
+
+            // Существующую панель не меняем.
+            updateFpsOverlay(
+                app,
+                static_cast<float>(fps),
+                static_cast<float>(averageIntervalMs),
                 state->presentedFrames
             );
 
-            updateFpsOverlay(app, static_cast<float>(fps),
-                             static_cast<float>(averageIntervalMs),
-                             state->presentedFrames);
             state->statsStartTime = now;
             state->presentedFrames = 0;
+            state->measuredIntervals = 0;
+            state->intervalsOver50Ms = 0;
+            state->maxIntervalMs = 0.0;
+            state->totalWorkMs = 0.0;
+            state->maxWorkMs = 0.0;
+
+            // lastPresentedTime сохраняем, чтобы не потерять
+            // интервал на границе двух периодов статистики.
         }
     }
 
@@ -253,6 +311,7 @@ namespace
         }
 
         const auto now = std::chrono::steady_clock::now();
+        const auto workStartTime = now;
 
         float deltaSeconds =
             std::chrono::duration<float>(
@@ -288,7 +347,14 @@ namespace
 
         if (state->renderer.drawFrame())
         {
-            recordPresentedFrame(app, state);
+            const auto workEndTime = std::chrono::steady_clock::now();
+
+            const double workMs =
+                std::chrono::duration<double, std::milli>(
+                    workEndTime - workStartTime
+                ).count();
+
+            recordPresentedFrame(app, state, workMs);
             return;
         }
 
@@ -332,6 +398,12 @@ namespace
                 state->nextFrameTime = state->lastFrameTime;
                 state->statsStartTime = state->lastFrameTime;
                 state->presentedFrames = 0;
+                state->lastPresentedTime = {};
+                state->measuredIntervals = 0;
+                state->intervalsOver50Ms = 0;
+                state->maxIntervalMs = 0.0;
+                state->totalWorkMs = 0.0;
+                state->maxWorkMs = 0.0;
                 updateFpsOverlay(app, -1.0f, 0.0f, 0);
                 logInfo("ATLAS: окно получило фокус.");
                 break;

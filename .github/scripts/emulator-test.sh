@@ -20,7 +20,7 @@ package=com.atlas.engine
 check_fps_overlay() {
   local label="$1"
   adb exec-out screencap -p > "fps-${label}.png"
-  adb logcat -d -s ATLAS:I ATLAS_TEST_UI:I '*:S' > "fps-${label}-log.txt"
+  adb logcat -d -s ATLAS:I ATLAS_TEST_UI:I ATLAS_TEST_STATS:I '*:S' > "fps-${label}-log.txt"
   if ! python3 .github/scripts/check-fps-overlay.py "fps-${label}.png" "fps-${label}-log.txt" > fps-check-error.txt 2>&1; then
     detail=$(cat fps-check-error.txt | tail -c 8000 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
     echo "::error title=FPS overlay check::$detail"
@@ -55,8 +55,8 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.11/ATLAS/app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n "$package/android.app.NativeActivity"
+adb install -r reference-0.12/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
@@ -179,12 +179,17 @@ from pathlib import Path
 lines = Path('atlas-stats.txt').read_text().splitlines()
 assert len(lines) >= 2, 'Expected FPS stats before and after resuming'
 for line in lines:
-    match = re.search(r'FPS=([0-9.]+), средний интервал=([0-9.]+) мс, кадров=(\d+)', line)
-    assert match, f'Malformed FPS statistics: {line}'
-    fps, interval, count = float(match[1]), float(match[2]), int(match[3])
-    assert fps > 0 and interval > 0 and count > 0, line
+    match = re.search(r'FPS=([0-9.]+), средний интервал=([0-9.]+) мс, макс\. интервал=([0-9.]+) мс, свыше 50 мс=(\d+)/(\d+), работа кадра: средняя=([0-9.]+) мс, макс\.=([0-9.]+) мс', line)
+    assert match, f'Malformed statistics: {line}'
+    fps, interval, maximum, slow, measured, work, max_work = match.groups()
+    fps, interval, maximum, work, max_work = map(float, (fps, interval, maximum, work, max_work))
+    slow, measured = int(slow), int(measured)
+    assert fps > 0 and interval > 0 and measured > 0, line
+    assert 0 <= slow <= measured and maximum > 0 and 0 <= work <= max_work, line
     assert abs(fps * interval - 1000) < 15, line
     print(line)
+first = re.search(r'макс\. интервал=([0-9.]+) мс, свыше 50 мс=(\d+)/(\d+), работа кадра: средняя=([0-9.]+) мс, макс\.=([0-9.]+) мс', lines[0])
+assert float(first[1]) > 50 and int(first[2]) >= 1 and float(first[5]) >= 70, 'Injected 80 ms delay was not recorded'
 PYSTATS
 if grep -E 'vkCreateBuffer: ошибка|vkAllocateMemory для вершин: ошибка|vkMapMemory для вершин: ошибка' atlas-log.txt; then
   echo 'Vertex buffer Vulkan error found' >&2

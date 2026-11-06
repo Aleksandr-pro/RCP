@@ -49,7 +49,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.12-debug
+          name: ATLAS-0.12-diagnostics-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -88,11 +88,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.11 for update testing
+      - name: Check out ATLAS 0.12 for update testing
         uses: actions/checkout@v4
         with:
-          ref: ef17a2d5d5bf25aebec5be6d87e45dfd2ad9de4a
-          path: reference-0.11
+          ref: f466cc9651d67845ee1df540e9a2aff948be640d
+          path: reference-0.12
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -100,8 +100,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.11 emulator APK
-        working-directory: reference-0.11/ATLAS
+      - name: Build ATLAS 0.12 emulator APK
+        working-directory: reference-0.12/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -111,6 +111,13 @@ jobs:
           from pathlib import Path
           path = Path('ATLAS/app/src/main/cpp/main.cpp')
           text = path.read_text()
+          text = text.replace('#include <chrono>\n', '#include <chrono>\n#include <thread>\n')
+          needle = '        const auto workStartTime = now;'
+          assert text.count(needle) == 1
+          text = text.replace(needle, needle + '\n        static int testFrameCount = 0;\n        if (++testFrameCount == 30) std::this_thread::sleep_for(std::chrono::milliseconds(80));')
+          needle = '            // Существующую панель не меняем.'
+          assert text.count(needle) == 1
+          text = text.replace(needle, '            __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST_STATS", "FPS=%.1f, interval=%.1f, frames=%u", fps, averageIntervalMs, state->presentedFrames);\n' + needle)
           needle = '        if (!state->renderer.updateRotation(state->angle))'
           assert text.count(needle) == 1
           text = text.replace(needle, '        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "update angle=%.5f", state->angle);\n\n' + needle)
