@@ -56,7 +56,7 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.15/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.16/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
@@ -69,7 +69,9 @@ for i in $(seq 1 30); do
 done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
-adb logcat -d -s ATLAS_TEST:I '*:S' | grep -q 'update angle='
+adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-initial-trace.txt
+grep -q 'update angle=' atlas-initial-trace.txt
+grep -q 'scene draw count=9' atlas-initial-trace.txt
 grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
@@ -108,11 +110,13 @@ before = Image.open('motion-before.png').convert('RGB')
 after = Image.open('motion-after.png').convert('RGB')
 assert before.size == after.size
 w, h = before.size
-crop = (w // 20, h // 10, w * 19 // 20, h * 9 // 10)
+side = min(w, h)
+crop = (w // 2 - side * 7 // 20, h // 2 - side * 7 // 20,
+        w // 2 + side * 7 // 20, h // 2 + side * 7 // 20)
 diff = ImageChops.difference(before.crop(crop), after.crop(crop))
 fraction = sum(1 for p in diff.getdata() if max(p) > 20) / (diff.width * diff.height)
-print(f'Animation: {fraction:.2%} of rendered-area pixels changed')
-assert fraction > 0.005, 'The cube did not visibly move'
+print(f'Stationary scene: {fraction:.2%} of scene pixels changed')
+assert fraction < 0.005, 'The scene moved without touch input'
 PYMOTION
 check_fps_overlay portrait
 adb shell input keyevent KEYCODE_HOME

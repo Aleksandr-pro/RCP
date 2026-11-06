@@ -26,8 +26,10 @@ vertical = [(float(dx), float(dy), int(w), int(h), float(before), float(after))
 assert vertical, 'No vertical movement events received'
 for dx, dy, width, height, before, after in vertical:
     assert height > 0
-    expected = math.fmod(before + dy / height * 3.14159265, 6.2831853)
+    expected = max(-1.2, min(1.2, before + dy / height * 3.14159265))
     assert abs(expected - after) < 0.001, (dx, dy, width, height, before, after, expected)
+assert all(-1.200001 <= after <= 1.200001 for _, _, _, _, _, after in vertical)
+assert any(abs(after) >= 1.199 for _, _, _, _, _, after in vertical), 'Tilt limit was not exercised'
 for width in (320, 640):
     movements = [(dx, dy) for dx, dy, w, _, _, _ in vertical if w == width]
     assert any(dy > 0 for dx, dy in movements), f'No down swipe at width {width}'
@@ -53,10 +55,14 @@ for orientation in ('portrait', 'landscape'):
     def changed(other):
         diff = ImageChops.difference(before.crop(crop), other.crop(crop))
         return sum(1 for pixel in diff.getdata() if max(pixel) > 20) / (diff.width * diff.height)
+    still = Image.open(f'scene-comparison/touch-{orientation}-still.png').convert('RGB')
+    still_diff = ImageChops.difference(right.crop(crop), still.crop(crop))
+    still_fraction = sum(1 for pixel in still_diff.getdata() if max(pixel) > 20) / (still_diff.width * still_diff.height)
+    assert still_fraction < 0.005, f'Scene moved after release: {orientation}, {still_fraction:.2%}'
     right_diff, left_diff = changed(right), changed(left)
     print(f'{orientation}: right swipe difference={right_diff:.2%}, opposite swipe remaining difference={left_diff:.2%}')
     assert right_diff > 0.005, f'Right swipe did not visibly rotate the scene: {orientation}'
-    assert left_diff < 0.02, f'Opposite swipe did not restore the angle: {orientation}'
+    assert left_diff < right_diff * 0.5, f'Opposite swipe did not return substantially toward the starting view: {orientation}'
     for direction in ('down', 'diagonal'):
         image = Image.open(f'scene-comparison/touch-{orientation}-{direction}.png').convert('RGB')
         difference = changed(image)

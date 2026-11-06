@@ -1680,17 +1680,21 @@ bool VulkanRenderer::recordCommandBuffers(float angleY, float angleX)
         const float height = static_cast<float>(swapchainExtent_.height);
         const float aspect = width / height;
 
-        const Matrix4 view = cameraView();
+        // Сначала поворачиваем сцену относительно наблюдателя,
+        // затем размещаем её перед камерой.
+        const Matrix4 view = multiply(
+            cameraView(),
+            multiply(
+                rotationX(angleX),
+                rotationY(angleY)
+            )
+        );
         const Matrix4 projection = perspective(aspect);
 
         for (const atlas::SceneObject& object : atlas::TEST_SCENE)
         {
-            const float objectAngle = angleY + object.rotationOffset;
-
-            const Matrix4 rotation = multiply(
-                rotationX(angleX),
-                rotationY(objectAngle)
-            );
+            // Собственный поворот объекта не зависит от камеры.
+            const Matrix4 rotation = rotationY(object.rotationOffset);
 
             const Matrix4 position = translation(
                 object.x,
