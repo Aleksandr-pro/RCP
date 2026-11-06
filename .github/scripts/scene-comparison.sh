@@ -62,6 +62,23 @@ print(f'Center cube colored pixels: normal={normal_area}, larger={larger_area}')
 assert normal_area > 0 and larger_area > normal_area * 1.15, 'Changing scene scale did not visibly enlarge the center cube'
 PYCODE
 
+wait_orientation() {
+  local expected="$1" screenshot="scene-comparison/orientation-wait.png"
+  for attempt in $(seq 1 12); do
+    adb exec-out screencap -p > "$screenshot"
+    if python3 - "$screenshot" "$expected" <<'PYORIENTATION'
+import sys
+from PIL import Image
+w, h = Image.open(sys.argv[1]).size
+assert (w < h) if sys.argv[2] == 'portrait' else (w > h), (w, h)
+PYORIENTATION
+    then return 0; fi
+    sleep 2
+  done
+  echo "::error::Display did not reach $expected orientation"
+  return 1
+}
+
 # The comparison build freezes automatic rotation and adds touch tracing only
 # for this test. This isolates the gesture response from normal animation.
 adb shell am force-stop "$package"
@@ -70,6 +87,7 @@ adb shell settings put system user_rotation 0
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 6
+wait_orientation portrait
 adb exec-out screencap -p > scene-comparison/touch-portrait-before.png
 adb shell input swipe 60 350 220 350 700
 sleep 2
@@ -81,6 +99,7 @@ adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.t
 adb logcat -c
 adb shell settings put system user_rotation 1
 sleep 5
+wait_orientation landscape
 adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
 adb shell input swipe 140 180 460 180 700
 sleep 2

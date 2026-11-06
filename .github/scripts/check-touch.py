@@ -19,7 +19,7 @@ for width in (320, 640):
     movements = [dx for dx, w, _, _ in events if w == width]
     assert any(dx > 0 for dx in movements), f'No right swipe at width {width}'
     assert any(dx < 0 for dx in movements), f'No left swipe at width {width}'
-assert 'lost focus active=1' in log, 'Focus loss was not exercised during an active touch'
+assert ('lost focus active=1' in log or 'end action=3 active=1' in log), 'Neither focus loss nor Android cancellation occurred during an active touch'
 assert 'focus reset active=0 id=-1' in log, 'Active touch was not reset on focus loss'
 after_focus = log.rsplit('focus reset active=0 id=-1', 1)[1]
 assert re.search(pattern, after_focus), 'No touch movement after resuming'

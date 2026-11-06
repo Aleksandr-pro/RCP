@@ -45,6 +45,9 @@ jobs:
           needle = '                    state->angle = std::fmod(state->angle, fullTurn);'
           assert source.count(needle) == 1
           source = source.replace(needle, needle + '\n                    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "move dx=%.4f width=%d before=%.6f after=%.6f", deltaX, windowWidth, testBefore, state->angle);')
+          needle = '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                state->touchActive = false;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, '            case AMOTION_EVENT_ACTION_CANCEL:\n            {\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "end action=%d active=%d", actionMasked, state->touchActive);\n                state->touchActive = false;')
           needle = '                state->hasFocus = false;'
           assert source.count(needle) == 1
           source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);')
