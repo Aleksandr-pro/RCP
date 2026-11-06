@@ -26,7 +26,7 @@ public:
 
     // Выводит один кадр.
     bool drawFrame();
-    bool updateRotation(float angle);
+    bool updateRotation(float angleY, float angleX);
 
     // Освобождает все Vulkan-ресурсы.
     void shutdown();
@@ -53,7 +53,7 @@ private:
     bool createFramebuffers();
     bool createVertexBuffer();
     bool createCommandResources();
-    bool recordCommandBuffers(float angle);
+    bool recordCommandBuffers(float angleY, float angleX);
     bool createSyncObjects();
 
     VkInstance instance_ = VK_NULL_HANDLE;

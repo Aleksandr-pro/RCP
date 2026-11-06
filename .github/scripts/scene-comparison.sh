@@ -3,6 +3,7 @@ set -Eeuo pipefail
 trap 'echo "::error::Scene comparison failed at line $LINENO: $BASH_COMMAND"' ERR
 mkdir -p scene-comparison
 package=com.atlas.engine
+adb logcat -G 32M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb install -r reference-0.13/ATLAS/app/build/outputs/apk/debug/app-debug.apk
@@ -96,6 +97,16 @@ adb exec-out screencap -p > scene-comparison/touch-portrait-right.png
 adb shell input swipe 220 350 60 350 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
+adb shell input swipe 160 220 160 420 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-portrait-down.png
+adb shell input swipe 160 420 160 220 700
+sleep 2
+adb shell input swipe 60 230 210 410 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-portrait-diagonal.png
+adb shell input swipe 210 410 60 230 700
+sleep 2
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
 adb logcat -c
 # Start a fresh landscape activity, so this gesture check is independent of
@@ -114,6 +125,16 @@ adb exec-out screencap -p > scene-comparison/touch-landscape-right.png
 adb shell input swipe 460 180 140 180 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-left.png
+adb shell input swipe 320 80 320 240 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-landscape-down.png
+adb shell input swipe 320 240 320 80 700
+sleep 2
+adb shell input swipe 160 80 440 240 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-landscape-diagonal.png
+adb shell input swipe 440 240 160 80 700
+sleep 2
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' >> scene-comparison/touch-log.txt
 adb logcat -c
 # Leave a finger down while the app loses focus, then resume and swipe again.

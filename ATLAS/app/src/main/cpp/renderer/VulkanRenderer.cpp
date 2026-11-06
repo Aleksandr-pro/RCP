@@ -1614,10 +1614,10 @@ bool VulkanRenderer::createCommandResources()
         return false;
     }
 
-    return recordCommandBuffers(0.55f);
+    return recordCommandBuffers(0.55f, -0.35f);
 }
 
-bool VulkanRenderer::recordCommandBuffers(float angle)
+bool VulkanRenderer::recordCommandBuffers(float angleY, float angleX)
 {
     for (size_t i = 0; i < commandBuffers_.size(); ++i)
     {
@@ -1685,10 +1685,10 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
 
         for (const atlas::SceneObject& object : atlas::TEST_SCENE)
         {
-            const float objectAngle = angle + object.rotationOffset;
+            const float objectAngle = angleY + object.rotationOffset;
 
             const Matrix4 rotation = multiply(
-                rotationX(-0.35f),
+                rotationX(angleX),
                 rotationY(objectAngle)
             );
 
@@ -1740,7 +1740,7 @@ bool VulkanRenderer::recordCommandBuffers(float angle)
     return true;
 }
 
-bool VulkanRenderer::updateRotation(float angle)
+bool VulkanRenderer::updateRotation(float angleY, float angleX)
 {
     if (!initialized_)
     {
@@ -1758,7 +1758,7 @@ bool VulkanRenderer::updateRotation(float angle)
         return false;
     }
 
-    return recordCommandBuffers(angle);
+    return recordCommandBuffers(angleY, angleX);
 }
 
 bool VulkanRenderer::createSyncObjects()
