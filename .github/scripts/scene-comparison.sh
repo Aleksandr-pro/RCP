@@ -60,3 +60,41 @@ larger_area = colored(larger)
 print(f'Center cube colored pixels: normal={normal_area}, larger={larger_area}')
 assert normal_area > 0 and larger_area > normal_area * 1.15, 'Changing scene scale did not visibly enlarge the center cube'
 PYCODE
+
+# The comparison build freezes automatic rotation and adds touch tracing only
+# for this test. This isolates the gesture response from normal animation.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/atlas-014-normal.apk"
+adb shell settings put system user_rotation 0
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+adb exec-out screencap -p > scene-comparison/touch-portrait-before.png
+adb shell input swipe 60 350 220 350 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-portrait-right.png
+adb shell input swipe 220 350 60 350 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
+adb shell settings put system user_rotation 1
+sleep 5
+adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
+adb shell input swipe 140 180 460 180 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-landscape-right.png
+adb shell input swipe 460 180 140 180 700
+sleep 2
+adb exec-out screencap -p > scene-comparison/touch-landscape-left.png
+# Leave a finger down while the app loses focus, then resume and swipe again.
+adb shell input swipe 120 180 480 180 3000 &
+swipe_pid=$!
+sleep 1
+adb shell input keyevent KEYCODE_HOME
+wait "$swipe_pid"
+sleep 2
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb shell input swipe 140 180 460 180 700
+sleep 2
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
+python3 .github/scripts/check-touch.py
