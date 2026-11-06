@@ -45,33 +45,56 @@ namespace
             return false;
         }
 
-        logInfo("ATLAS: создание Vulkan-рендерера.");
+        // Если окно изменилось во время создания swapchain,
+        // разрешаем одну повторную попытку.
+        constexpr int maxAttempts = 2;
+
+        for (int attempt = 0; attempt < maxAttempts; ++attempt)
+        {
+            __android_log_print(
+                ANDROID_LOG_INFO,
+                LOG_TAG,
+                "ATLAS: создание Vulkan-рендерера, попытка %d/%d.",
+                attempt + 1,
+                maxAttempts
+            );
+
+            if (!state->renderer.initialize(
+                    app->window,
+                    app->activity->assetManager
+                ))
+            {
+                logError("ATLAS: ошибка запуска Vulkan-рендерера.");
+                return false;
+            }
+
+            if (state->renderer.drawFrame())
+            {
+                return true;
+            }
+
+            // Считываем признак до shutdown(), который его сбрасывает.
+            const bool outOfDate =
+                state->renderer.isSwapchainOutOfDate();
+
+            state->renderer.shutdown();
+
+            if (!outOfDate)
+            {
+                logError("ATLAS: первый Vulkan-кадр не выведен.");
+                return false;
+            }
+
+            logInfo("ATLAS: swapchain устарел, повторяем создание.");
+        }
 
         __android_log_print(
-            ANDROID_LOG_INFO,
+            ANDROID_LOG_WARN,
             LOG_TAG,
-            "ATLAS: native window=%dx%d",
-            ANativeWindow_getWidth(app->window),
-            ANativeWindow_getHeight(app->window)
+            "ATLAS: окно ещё меняется; ожидаем следующее событие окна."
         );
 
-        if (!state->renderer.initialize(
-                app->window,
-                app->activity->assetManager
-            ))
-        {
-            logError("ATLAS: ошибка запуска Vulkan-рендерера.");
-            return false;
-        }
-
-        if (!state->renderer.drawFrame())
-        {
-            logError("ATLAS: первый Vulkan-кадр не выведен.");
-            state->renderer.shutdown();
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     void redraw(android_app* app, EngineState* state)
@@ -89,10 +112,20 @@ namespace
             return;
         }
 
-        if (!state->renderer.drawFrame())
+        if (state->renderer.drawFrame())
         {
-            logInfo("ATLAS: повторное создание рендерера.");
+            return;
+        }
+
+        if (state->renderer.isSwapchainOutOfDate())
+        {
+            logInfo("ATLAS: пересоздание устаревшего swapchain.");
             restartRenderer(app, state);
+        }
+        else
+        {
+            logError("ATLAS: ошибка отрисовки Vulkan.");
+            state->renderer.shutdown();
         }
     }
 

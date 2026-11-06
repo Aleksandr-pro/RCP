@@ -31,6 +31,7 @@ public:
     void shutdown();
 
     bool isInitialized() const;
+    bool isSwapchainOutOfDate() const;
 
 private:
     bool createInstance();
@@ -89,4 +90,5 @@ private:
     VkSemaphore renderFinished_ = VK_NULL_HANDLE;
 
     bool initialized_ = false;
+    bool swapchainOutOfDate_ = false;
 };

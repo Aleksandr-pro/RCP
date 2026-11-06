@@ -18,64 +18,62 @@ namespace
         float color[3];
     };
 
-    // Тестовый куб: 6 граней, на каждой по 2 треугольника.
-    // Координаты X и Y пока уже подготовлены для вывода на экран.
-    // Z хранится в вершинах, но проверка глубины ещё не включена.
+    // Куб размером 1×1×1 с центром в начале координат.
+    // Каждая грань состоит из двух треугольников — шести вершин.
     constexpr Vertex CUBE_VERTICES[] = {
-        // Задняя грань — тёмно-синяя
-        {{-0.45f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
-        {{ 0.55f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        // Передняя грань: зелёная, z = -0.5
+        {{-0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
 
-        {{-0.45f, -0.35f, 0.7f}, {0.15f, 0.25f, 0.55f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
-        {{-0.45f,  0.65f, 0.7f}, {0.15f, 0.25f, 0.55f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.25f, 0.80f, 0.40f}},
 
-        // Левая грань — красная
-        {{-0.65f, -0.55f, 0.3f}, {0.65f, 0.20f, 0.20f}},
-        {{-0.45f, -0.35f, 0.7f}, {0.65f, 0.20f, 0.20f}},
-        {{-0.45f,  0.65f, 0.7f}, {0.65f, 0.20f, 0.20f}},
+        // Задняя грань: синяя, z = 0.5
+        {{-0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
 
-        {{-0.65f, -0.55f, 0.3f}, {0.65f, 0.20f, 0.20f}},
-        {{-0.45f,  0.65f, 0.7f}, {0.65f, 0.20f, 0.20f}},
-        {{-0.65f,  0.45f, 0.3f}, {0.65f, 0.20f, 0.20f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.15f, 0.25f, 0.75f}},
 
-        // Верхняя грань — светло-синяя
-        {{-0.65f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.35f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.55f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
+        // Левая грань: красная, x = -0.5
+        {{-0.5f, -0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
 
-        {{-0.65f, -0.55f, 0.3f}, {0.35f, 0.70f, 0.90f}},
-        {{ 0.55f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
-        {{-0.45f, -0.35f, 0.7f}, {0.35f, 0.70f, 0.90f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.80f, 0.20f, 0.20f}},
+        {{-0.5f,  0.5f, -0.5f}, {0.80f, 0.20f, 0.20f}},
 
-        // Правая грань — оранжевая
-        {{ 0.35f, -0.55f, 0.3f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.55f, -0.35f, 0.7f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.90f, 0.45f, 0.15f}},
+        // Правая грань: оранжевая, x = 0.5
+        {{ 0.5f, -0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
 
-        {{ 0.35f, -0.55f, 0.3f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.90f, 0.45f, 0.15f}},
-        {{ 0.35f,  0.45f, 0.3f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.90f, 0.45f, 0.15f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.90f, 0.45f, 0.15f}},
 
-        // Нижняя грань — фиолетовая
-        {{-0.65f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.35f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
+        // Грань y = -0.5: голубая
+        {{-0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
 
-        {{-0.65f,  0.45f, 0.3f}, {0.55f, 0.30f, 0.80f}},
-        {{ 0.55f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
-        {{-0.45f,  0.65f, 0.7f}, {0.55f, 0.30f, 0.80f}},
+        {{-0.5f, -0.5f, -0.5f}, {0.35f, 0.70f, 0.90f}},
+        {{ 0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
+        {{-0.5f, -0.5f,  0.5f}, {0.35f, 0.70f, 0.90f}},
 
-        // Передняя грань — зелёная.
-        // Рисуем её последней, так как depth test пока отсутствует.
-        {{-0.65f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.35f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.35f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}},
+        // Грань y = 0.5: фиолетовая
+        {{-0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}},
 
-        {{-0.65f, -0.55f, 0.3f}, {0.25f, 0.80f, 0.40f}},
-        {{ 0.35f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}},
-        {{-0.65f,  0.45f, 0.3f}, {0.25f, 0.80f, 0.40f}}
+        {{-0.5f,  0.5f, -0.5f}, {0.55f, 0.30f, 0.80f}},
+        {{ 0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}},
+        {{-0.5f,  0.5f,  0.5f}, {0.55f, 0.30f, 0.80f}}
     };
 
     constexpr uint32_t CUBE_VERTEX_COUNT =
@@ -184,6 +182,11 @@ VulkanRenderer::~VulkanRenderer()
 bool VulkanRenderer::isInitialized() const
 {
     return initialized_;
+}
+
+bool VulkanRenderer::isSwapchainOutOfDate() const
+{
+    return swapchainOutOfDate_;
 }
 
 bool VulkanRenderer::initialize(
@@ -1649,8 +1652,15 @@ bool VulkanRenderer::createSyncObjects()
 
 bool VulkanRenderer::drawFrame()
 {
+    swapchainOutOfDate_ = false;
+
     if (!initialized_)
     {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: попытка рисования до инициализации."
+        );
         return false;
     }
 
@@ -1667,7 +1677,8 @@ bool VulkanRenderer::drawFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR)
     {
-        logInfo("Vulkan: swapchain устарел при получении кадра.");
+        swapchainOutOfDate_ = true;
+        logInfo("Vulkan: swapchain устарел при получении изображения.");
         return false;
     }
 
@@ -1677,6 +1688,13 @@ bool VulkanRenderer::drawFrame()
     {
         checkResult(result, "vkAcquireNextImageKHR");
         return false;
+    }
+
+    if (acquireSuboptimal)
+    {
+        logInfo(
+            "Vulkan: swapchain неоптимален при получении изображения."
+        );
     }
 
     VkPipelineStageFlags waitStage =
@@ -1712,31 +1730,28 @@ bool VulkanRenderer::drawFrame()
     presentInfo.pSwapchains = &swapchain_;
     presentInfo.pImageIndices = &imageIndex;
 
-    result = vkQueuePresentKHR(queue_, &presentInfo);
+    const VkResult presentResult =
+        vkQueuePresentKHR(queue_, &presentInfo);
 
-    // Для первой диагностической версии ждём завершения очереди.
-    // Для полноценного игрового цикла заменим это на нормальную
-    // многокадровую синхронизацию.
-    const VkResult idleResult = vkQueueWaitIdle(queue_);
-
-    if (!checkResult(idleResult, "vkQueueWaitIdle"))
+    // Текущая диагностическая версия обрабатывает кадры
+    // последовательно. Для игрового цикла это будет заменено.
+    if (!checkResult(vkQueueWaitIdle(queue_), "vkQueueWaitIdle"))
     {
         return false;
     }
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
     {
+        swapchainOutOfDate_ = true;
         logInfo("Vulkan: swapchain устарел при выводе кадра.");
         return false;
     }
 
-    if (result == VK_SUBOPTIMAL_KHR || acquireSuboptimal)
+    if (presentResult == VK_SUBOPTIMAL_KHR)
     {
-        logInfo("Vulkan: swapchain требует обновления.");
-        return false;
+        logInfo("Vulkan: кадр выведен, но swapchain неоптимален.");
     }
-
-    if (!checkResult(result, "vkQueuePresentKHR"))
+    else if (!checkResult(presentResult, "vkQueuePresentKHR"))
     {
         return false;
     }
@@ -1748,6 +1763,7 @@ bool VulkanRenderer::drawFrame()
 void VulkanRenderer::shutdown()
 {
     initialized_ = false;
+    swapchainOutOfDate_ = false;
 
     if (device_ != VK_NULL_HANDLE)
     {

@@ -88,8 +88,12 @@ adb shell settings put system user_rotation 3
 sleep 5
 check_screen landscape-reverse
 python3 .github/scripts/check-screen.py --compare landscape-reverse
-adb shell settings put system user_rotation 0
-sleep 5
+# Exercise several consecutive orientation changes and verify each resulting frame.
+for rotation in 0 1 0 3 0; do
+  adb shell settings put system user_rotation "$rotation"
+  sleep 4
+  check_screen
+done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 if grep -E 'vkCreateBuffer: ошибка|vkAllocateMemory для вершин: ошибка|vkMapMemory для вершин: ошибка' atlas-log.txt; then
   echo 'Vertex buffer Vulkan error found' >&2
@@ -109,3 +113,11 @@ adb shell am start -n "$package/android.app.NativeActivity"
 sleep 5
 check_screen
 adb shell am force-stop "$package"
+# Check all engine error-level logs, including Vulkan failures.
+adb logcat -d -s ATLAS:E '*:S' > atlas-errors.txt
+if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-errors.txt; then
+  summary=$(tail -n 30 atlas-errors.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=ATLAS error log::$summary"
+  echo '::error::ATLAS reported error-level messages during the emulator test'
+  exit 1
+fi
