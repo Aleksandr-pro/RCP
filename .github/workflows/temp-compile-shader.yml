@@ -1,0 +1,27 @@
+name: Compile ATLAS shader
+on:
+  push:
+    paths:
+      - ATLAS/app/src/main/shaders/triangle.vert
+      - .github/workflows/temp-compile-shader.yml
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile vertex shader
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125'
+          "$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc" ATLAS/app/src/main/shaders/triangle.vert -o "$RUNNER_TEMP/triangle.vert.spv"
+          index=0
+          while IFS= read -r chunk || [ -n "$chunk" ]; do
+            echo "::notice title=shader-part-$index::$chunk"
+            index=$((index + 1))
+          done < <(base64 -w0 "$RUNNER_TEMP/triangle.vert.spv" | fold -w 2000)
+          echo "::notice title=shader-byte-count::$(wc -c < "$RUNNER_TEMP/triangle.vert.spv")"
