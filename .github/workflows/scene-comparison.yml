@@ -54,7 +54,7 @@ jobs:
           source = source.replace(needle, needle + '\n                        __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "pinch old=%.6f new=%.6f oldgap=%.6f gap=%.6f angle=%.6f tilt=%.6f", testOldCamera, state->cameraDistance, testOldGap, distance, state->angle, state->tiltAngle);')
           needle = '                state->hasFocus = false;'
           assert source.count(needle) == 1
-          source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);')
+          source = source.replace(needle, needle + '\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "lost focus active=%d", state->touchActive);\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "lost focus pinch=%d", state->pinchActive);')
           needle = '                state->activePointerId = -1;\n                logInfo("ATLAS: окно потеряло фокус.");'
           assert source.count(needle) == 1
           source = source.replace(needle, '                state->activePointerId = -1;\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "focus reset active=%d id=%d", state->touchActive, state->activePointerId);\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "focus reset pinch=%d id1=%d id2=%d gap=%.2f", state->pinchActive, state->pinchPointerId1, state->pinchPointerId2, state->lastPinchDistance);\n                logInfo("ATLAS: окно потеряло фокус.");')

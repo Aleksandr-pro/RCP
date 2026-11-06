@@ -133,7 +133,19 @@ pinch hold 640 320 &
 pinch_pid=$!
 sleep 1
 adb shell input keyevent KEYCODE_HOME
-wait "$pinch_pid"
+# The OS may kill the shell input helper when HOME cancels the gesture.
+# Accept only that specific exit status; the logs below must still prove
+# that an active pinch was cancelled and that a new pinch works on resume.
+if wait "$pinch_pid"; then
+  echo 'Pinch helper finished after HOME'
+else
+  status=$?
+  if [ "$status" -ne 137 ]; then
+    echo "::error::Pinch helper failed unexpectedly (exit $status)"
+    exit "$status"
+  fi
+  echo '::notice::Pinch helper was stopped by Android while switching to HOME'
+fi
 sleep 3
 adb shell am start -n "$package/.AtlasActivity"
 sleep 6

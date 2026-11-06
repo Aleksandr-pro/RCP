@@ -29,6 +29,7 @@ for orientation in ('portrait', 'landscape'):
     else:
         raise AssertionError('No active pinch ended by lifting a finger')
     if orientation == 'landscape':
+        assert ('lost focus pinch=1' in log or re.search(r'event=3 count=\d+ touch=0 pinch=1', log)), 'No active pinch was cancelled by backgrounding'
         assert 'focus reset pinch=0 id1=-1 id2=-1 gap=0.00' in log, 'Pinch state not reset on focus loss'
         after = log.rsplit('focus reset pinch=0 id1=-1 id2=-1 gap=0.00', 1)[1]
         assert pattern.search(after), 'Pinch did not work after return from background'
