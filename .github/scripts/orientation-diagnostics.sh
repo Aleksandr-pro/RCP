@@ -7,7 +7,7 @@ adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb shell am force-stop "$package"
 adb logcat -c
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 sleep 10
 adb shell screencap -p /sdcard/atlas-orientation.png
 adb pull /sdcard/atlas-orientation.png orientation-diagnostics/portrait.png
@@ -16,7 +16,7 @@ sleep 10
 adb shell screencap -p /sdcard/atlas-orientation.png
 adb pull /sdcard/atlas-orientation.png orientation-diagnostics/landscape-after-rotation.png
 adb shell am force-stop "$package"
-adb shell am start -n "$package/android.app.NativeActivity"
+adb shell am start -n "$package/.AtlasActivity"
 sleep 10
 adb shell screencap -p /sdcard/atlas-orientation.png
 adb pull /sdcard/atlas-orientation.png orientation-diagnostics/landscape-fresh.png
