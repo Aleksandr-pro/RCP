@@ -27,6 +27,10 @@ for orientation in ('portrait', 'landscape'):
     left = Image.open(f'scene-comparison/touch-{orientation}-left.png').convert('RGB')
     assert before.size == right.size == left.size
     w, h = before.size
+    if orientation == 'portrait':
+        assert w < h, f'Portrait screenshot is not portrait: {w}x{h}'
+    else:
+        assert w > h, f'Landscape screenshot is not landscape: {w}x{h}'
     side = min(w, h)
     crop = (w // 2 - side * 7 // 20, h // 2 - side * 7 // 20,
             w // 2 + side * 7 // 20, h // 2 + side * 7 // 20)

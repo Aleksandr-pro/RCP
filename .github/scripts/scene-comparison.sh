@@ -77,6 +77,8 @@ adb exec-out screencap -p > scene-comparison/touch-portrait-right.png
 adb shell input swipe 220 350 60 350 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
+adb logcat -c
 adb shell settings put system user_rotation 1
 sleep 5
 adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
@@ -86,6 +88,8 @@ adb exec-out screencap -p > scene-comparison/touch-landscape-right.png
 adb shell input swipe 460 180 140 180 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-left.png
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' >> scene-comparison/touch-log.txt
+adb logcat -c
 # Leave a finger down while the app loses focus, then resume and swipe again.
 adb shell input swipe 120 180 480 180 3000 &
 swipe_pid=$!
@@ -97,7 +101,7 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 adb shell input swipe 140 180 460 180 700
 sleep 2
-adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' >> scene-comparison/touch-log.txt
 if ! python3 .github/scripts/check-touch.py > scene-comparison/touch-check.txt 2>&1; then
   detail=$(cat scene-comparison/touch-check.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=Touch test::$detail"
