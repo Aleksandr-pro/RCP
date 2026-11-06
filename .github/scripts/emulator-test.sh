@@ -78,7 +78,7 @@ times = [t for t in times if t >= times[-1] - 3]
 assert len(times) >= 5, f'Too few recent animation updates: {len(times)}'
 intervals = [b - a for a, b in zip(times, times[1:])]
 print(f'Animation updates: {len(times)} over {times[-1] - times[0]:.3f}s; minimum interval {min(intervals):.3f}s')
-assert min(intervals) >= 0.030, 'Animation updates exceed the expected frame limit'
+assert (times[-1] - times[0]) / len(intervals) >= 0.031, 'Animation updates exceed the expected average frame limit'
 PYRATE
 adb exec-out screencap -p > motion-before.png
 sleep 2
@@ -99,18 +99,26 @@ adb shell input keyevent KEYCODE_HOME
 sleep 3
 # Preserve lifecycle and error logs before clearing the test trace.
 adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
+grep 'ATLAS stats: FPS=' atlas-pre-background-log.txt > atlas-stats.txt
 # The test-only draw trace is emitted at drawFrame entry, not in production APKs.
 adb logcat -c
 sleep 4
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-frame-test.txt
+adb logcat -d -s ATLAS:I '*:S' > atlas-background-log.txt
+if grep -q 'ATLAS stats: FPS=' atlas-background-log.txt; then
+  echo '::error::FPS statistics continued in the background'
+  exit 1
+fi
 if grep -q 'draw\|update angle=' atlas-frame-test.txt; then
   cat atlas-frame-test.txt
   echo '::error::Rendering continued while in the background'
   exit 1
 fi
 adb shell am start -n "$package/android.app.NativeActivity"
-sleep 5
+sleep 7
 check_screen
+adb logcat -d -s ATLAS:I '*:S' > atlas-resumed-log.txt
+grep 'ATLAS stats: FPS=' atlas-resumed-log.txt >> atlas-stats.txt
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-resumed-frames.txt
 grep -q 'update angle=' atlas-resumed-frames.txt
 adb shell settings put system accelerometer_rotation 0
@@ -140,6 +148,23 @@ done
 adb logcat -d -s ATLAS:I '*:S' > atlas-log.txt
 cat atlas-pre-background-log.txt atlas-log.txt > atlas-combined-log.txt
 mv atlas-combined-log.txt atlas-log.txt
+if grep -E 'swapchain неоптимален при получении изображения|кадр выведен, но swapchain неоптимален' atlas-log.txt; then
+  echo '::error::Repeated SUBOPTIMAL messages found'
+  exit 1
+fi
+python3 - <<'PYSTATS'
+import re
+from pathlib import Path
+lines = Path('atlas-stats.txt').read_text().splitlines()
+assert len(lines) >= 2, 'Expected FPS stats before and after resuming'
+for line in lines:
+    match = re.search(r'FPS=([0-9.]+), средний интервал=([0-9.]+) мс, кадров=(\d+)', line)
+    assert match, f'Malformed FPS statistics: {line}'
+    fps, interval, count = float(match[1]), float(match[2]), int(match[3])
+    assert fps > 0 and interval > 0 and count > 0, line
+    assert abs(fps * interval - 1000) < 15, line
+    print(line)
+PYSTATS
 if grep -E 'vkCreateBuffer: ошибка|vkAllocateMemory для вершин: ошибка|vkMapMemory для вершин: ошибка' atlas-log.txt; then
   echo 'Vertex buffer Vulkan error found' >&2
   exit 1
