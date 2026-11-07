@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.25a/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.25b/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-025a-reference.png
+adb exec-out screencap -p > atlas-025b-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -84,6 +84,7 @@ grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
+grep -q 'Vulkan: descriptor layout текстуры создан.' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
@@ -91,7 +92,7 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-025a-reference.png').convert('RGB')
+before = Image.open('atlas-025b-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
@@ -101,7 +102,7 @@ region = (w // 5, h // 5, 4 * w // 5, 4 * h // 5)
 old_pixels = list(before.crop(region).getdata())
 new_pixels = list(after.crop(region).getdata())
 changed = sum(a != b for a, b in zip(old_pixels, new_pixels))
-print(f'0.25a vs 0.25b: {changed} changed scene pixels out of {len(old_pixels)}')
+print(f'0.25b vs 0.25c: {changed} changed scene pixels out of {len(old_pixels)}')
 assert changed < len(old_pixels) * 0.001, 'Scene changed even though texture is not used for rendering'
 PYCOMPARE
 then
@@ -165,6 +166,9 @@ adb shell input keyevent KEYCODE_HOME
 sleep 3
 # Preserve lifecycle and error logs before clearing the test trace.
 adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
+adb logcat -d -s ATLAS_LAYOUT_TEST:I '*:S' > atlas-layout-lifecycle-log.txt
+grep -q 'pipeline layout destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'descriptor layout destroyed' atlas-layout-lifecycle-log.txt
 grep 'ATLAS stats: FPS=' atlas-pre-background-log.txt > atlas-stats.txt
 # The test-only draw trace is emitted at drawFrame entry, not in production APKs.
 adb logcat -c
@@ -382,3 +386,28 @@ if grep -Eq 'Vulkan: выбран GPU|Vulkan: рендерер готов|Сце
   echo '::error::Initialization continued despite an invalid texture'
   exit 1
 fi
+
+# Inject a failure only after both Vulkan layouts were successfully created.
+# Verify shutdown destroys the pipeline layout before the descriptor layout.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/atlas-layout-failure.apk"
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb logcat -d -s ATLAS:I ATLAS_LAYOUT_TEST:I '*:S' > atlas-layout-failure-log.txt
+python3 - <<'PYLAYOUT'
+from pathlib import Path
+log = Path('atlas-layout-failure-log.txt').read_text()
+needles = ('Vulkan: descriptor layout текстуры создан.',
+           'Vulkan: графический конвейер создан',
+           'inject pipeline failure',
+           'Vulkan: инициализация не завершена.',
+           'pipeline layout destroyed',
+           'descriptor layout destroyed')
+start = 0
+for needle in needles:
+    pos = log.find(needle, start)
+    assert pos >= 0, f'Missing or incorrectly ordered lifecycle event: {needle}'
+    start = pos + len(needle)
+print('Injected initialization failure released both layouts in the expected order')
+PYLAYOUT

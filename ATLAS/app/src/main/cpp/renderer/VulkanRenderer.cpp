@@ -300,6 +300,7 @@ bool VulkanRenderer::initialize(
         !createSwapchain() ||
         !createDepthResources() ||
         !createRenderPass() ||
+        !createTextureDescriptorLayout() ||
         !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
         !createFramebuffers() ||
@@ -1134,6 +1135,38 @@ bool VulkanRenderer::loadShaderModule(
     return true;
 }
 
+bool VulkanRenderer::createTextureDescriptorLayout()
+{
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType =
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo info{};
+    info.sType =
+        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    info.bindingCount = 1;
+    info.pBindings = &binding;
+
+    if (!checkResult(
+            vkCreateDescriptorSetLayout(
+                device_,
+                &info,
+                nullptr,
+                &textureDescriptorLayout_
+            ),
+            "vkCreateDescriptorSetLayout для текстуры"
+        ))
+    {
+        return false;
+    }
+
+    logInfo("Vulkan: descriptor layout текстуры создан.");
+    return true;
+}
+
 bool VulkanRenderer::createGraphicsPipeline(
     AAssetManager* assetManager
 )
@@ -1286,6 +1319,8 @@ bool VulkanRenderer::createGraphicsPipeline(
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &textureDescriptorLayout_;
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -2079,6 +2114,16 @@ void VulkanRenderer::shutdown()
         {
             vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
             pipelineLayout_ = VK_NULL_HANDLE;
+        }
+
+        if (textureDescriptorLayout_ != VK_NULL_HANDLE)
+        {
+            vkDestroyDescriptorSetLayout(
+                device_,
+                textureDescriptorLayout_,
+                nullptr
+            );
+            textureDescriptorLayout_ = VK_NULL_HANDLE;
         }
 
         for (VkFramebuffer framebuffer : framebuffers_)
