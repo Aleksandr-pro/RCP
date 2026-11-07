@@ -20,6 +20,8 @@ jobs:
           python3 .github/scripts/test-texture-loader.py
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-physics
           /tmp/test-physics
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-bounce.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-bounce
+          /tmp/test-bounce
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -41,7 +43,7 @@ jobs:
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.26b-debug
+          name: ATLAS-0.26c-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:
@@ -81,8 +83,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 93bcda838365590abd3e9c2cdd180bea1d8a33fe
-          path: reference-0.26a
+          ref: 5ca6408917e751e0f0909832a324435e184c30b4
+          path: reference-0.26b
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -90,7 +92,7 @@ jobs:
       - name: Install Android SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
       - name: Build previous APK
-        working-directory: reference-0.26a/ATLAS
+        working-directory: reference-0.26b/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug

@@ -6,8 +6,8 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.26a.
-adb install -r reference-0.26a/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26b.
+adb install -r reference-0.26b/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
@@ -32,7 +32,7 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 adb exec-out screencap -p > physics-diagnostics/normal.png
 adb exec-out screencap -p > physics-diagnostics/resumed.png
-adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
+adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_BOUNCE_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
 python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-diagnostics/analysis-error.txt; echo "::error::$(tail -n 3 physics-diagnostics/analysis-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
@@ -50,8 +50,13 @@ for index, target in enumerate((-0.6, 0.0, -0.6)):
     assert sum(abs(y-target) < 1e-5 and abs(v) < 1e-5 for y,v in states) > 10, f'Box {index} did not settle'
 assert any(v < -0.1 for y, v, r in samples), 'No fall recorded'
 assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y, v, r in samples) > 10, 'No stable landing'
-for a,b in zip(samples, samples[1:]):
-    assert b[0] <= a[0] + 1e-5, (a,b)
+bounce = [tuple(map(float, v)) for v in re.findall(r'ATLAS_BOUNCE_TEST: y=([-0-9.]+) velocity=([-0-9.]+)', text)]
+assert len(bounce) > 100
+assert all(y >= rest - 1e-6 for y,v in bounce), 'Bounce crossed the platform'
+impacts = [b[1] for a,b in zip(bounce,bounce[1:]) if a[1] < 0 and b[1] > 0 and abs(b[0]-rest) < 1e-5]
+assert len(impacts) >= 2 and all(b < a for a,b in zip(impacts,impacts[1:])), f'No diminishing rebounds: {impacts}'
+assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y,v in bounce) > 30, 'Bounce did not settle'
+print('Bounce impact speeds:', impacts)
 projection = [tuple(map(float,x)) for x in re.findall(r'y=([-0-9.]+) screenY=([-0-9.]+)', '\n'.join(line for line in text.splitlines() if 'ATLAS_PROJ_TEST' in line))]
 assert any(a[0]-b[0] > .15 and b[1] > a[1] for a in projection for b in projection if b[0] < a[0]), 'Falling Y must move down on screen'
 focus = re.findall(r'(lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
