@@ -170,6 +170,58 @@ namespace atlas
             return false;
         }
 
+        // Каждые три вершины образуют отдельный треугольник.
+        // Для него вычисляем одну плоскую нормаль.
+        for (size_t i = 0; i < vertices.size(); i += 3)
+        {
+            const Vertex& a = vertices[i];
+            const Vertex& b = vertices[i + 1];
+            const Vertex& c = vertices[i + 2];
+
+            // Промежуточные вычисления в double уменьшают риск переполнения
+            // при обработке значений float из файла.
+            const double abX = static_cast<double>(b.position[0]) - a.position[0];
+            const double abY = static_cast<double>(b.position[1]) - a.position[1];
+            const double abZ = static_cast<double>(b.position[2]) - a.position[2];
+
+            const double acX = static_cast<double>(c.position[0]) - a.position[0];
+            const double acY = static_cast<double>(c.position[1]) - a.position[1];
+            const double acZ = static_cast<double>(c.position[2]) - a.position[2];
+
+            const double nx = abY * acZ - abZ * acY;
+            const double ny = abZ * acX - abX * acZ;
+            const double nz = abX * acY - abY * acX;
+
+            const double length = std::sqrt(nx * nx + ny * ny + nz * nz);
+
+            if (!std::isfinite(length) || length <= 1e-12)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Вырожденный или некорректный треугольник в модели %s: %u",
+                    path,
+                    static_cast<unsigned>(i / 3)
+                );
+
+                vertices.clear();
+                return false;
+            }
+
+            const float normal[3] = {
+                static_cast<float>(nx / length),
+                static_cast<float>(ny / length),
+                static_cast<float>(nz / length)
+            };
+
+            for (size_t j = 0; j < 3; ++j)
+            {
+                vertices[i + j].normal[0] = normal[0];
+                vertices[i + j].normal[1] = normal[1];
+                vertices[i + j].normal[2] = normal[2];
+            }
+        }
+
         __android_log_print(
             ANDROID_LOG_INFO,
             LOG_TAG,

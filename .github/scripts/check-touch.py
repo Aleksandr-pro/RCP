@@ -4,6 +4,15 @@ from pathlib import Path
 from PIL import Image, ImageChops
 
 log = Path('scene-comparison/touch-log.txt').read_text()
+light_events = [tuple(map(float, values)) for values in re.findall(
+    r'camera=([-0-9.]+),([-0-9.]+) light=([-0-9.]+),([-0-9.]+),([-0-9.]+)', log)]
+assert light_events, 'No per-object lighting trace'
+assert max(v[0] for v in light_events) - min(v[0] for v in light_events) > 0.3, 'Camera did not rotate during lighting check'
+assert max(v[1] for v in light_events) - min(v[1] for v in light_events) > 0.3, 'Camera tilt did not change during lighting check'
+for yaw, tilt, x, y, z in light_events:
+    assert abs(x - 0.4) < 1e-5 and abs(y - 0.8) < 1e-5 and abs(z + 0.6) < 1e-5, (yaw, tilt, x, y, z)
+print(f'Scene-fixed center light verified for {len(light_events)} camera poses')
+
 pattern = r'move dx=([-0-9.]+) width=(\d+) before=([-0-9.]+) after=([-0-9.]+)'
 events = [(float(dx), int(width), float(before), float(after))
           for dx, width, before, after in re.findall(pattern, log)]

@@ -28,6 +28,25 @@ namespace
 
     static_assert(sizeof(Matrix4) == 64, "Matrix4 должна занимать 64 байта.");
 
+    struct PushConstants
+    {
+        Matrix4 mvp;
+
+        // Направление к источнику света в координатах модели.
+        // Четвёртый компонент — для выравнивания GLSL vec4.
+        float lightDirection[4];
+    };
+
+    static_assert(
+        offsetof(PushConstants, lightDirection) == 64,
+        "Неверное смещение lightDirection."
+    );
+
+    static_assert(
+        sizeof(PushConstants) == 80,
+        "PushConstants должен занимать 80 байт."
+    );
+
     Matrix4 multiply(const Matrix4& a, const Matrix4& b)
     {
         Matrix4 result{};
@@ -1151,7 +1170,7 @@ bool VulkanRenderer::createGraphicsPipeline(
     binding.stride = sizeof(Vertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributes[2]{};
+    VkVertexInputAttributeDescription attributes[3]{};
 
     // location = 0: позиция из трёх чисел float.
     attributes[0].location = 0;
@@ -1165,12 +1184,18 @@ bool VulkanRenderer::createGraphicsPipeline(
     attributes[1].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributes[1].offset = offsetof(Vertex, color);
 
+    // location = 2: нормаль из трёх чисел float.
+    attributes[2].location = 2;
+    attributes[2].binding = 0;
+    attributes[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributes[2].offset = offsetof(Vertex, normal);
+
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.vertexAttributeDescriptionCount = 3;
     vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -1236,8 +1261,8 @@ bool VulkanRenderer::createGraphicsPipeline(
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    // Два float: пропорции экрана и код поворота.
-    pushConstantRange.size = sizeof(Matrix4);
+    // Матрица MVP и направление света.
+    pushConstantRange.size = sizeof(PushConstants);
 
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1748,13 +1773,32 @@ bool VulkanRenderer::recordCommandBuffers(
                 multiply(view, model)
             );
 
+            // Направление к источнику света в координатах сцены.
+            // Его нормализация выполняется в шейдере.
+            constexpr float lightX = 0.4f;
+            constexpr float lightY = 0.8f;
+            constexpr float lightZ = -0.6f;
+
+            const float c = std::cos(object.rotationOffset);
+            const float s = std::sin(object.rotationOffset);
+
+            PushConstants push{};
+            push.mvp = mvp;
+
+            // Обратный поворот переводит свет из координат сцены
+            // в локальные координаты модели.
+            push.lightDirection[0] = c * lightX - s * lightZ;
+            push.lightDirection[1] = lightY;
+            push.lightDirection[2] = s * lightX + c * lightZ;
+            push.lightDirection[3] = 0.0f;
+
             vkCmdPushConstants(
                 commandBuffers_[i],
                 pipelineLayout_,
                 VK_SHADER_STAGE_VERTEX_BIT,
                 0,
-                sizeof(Matrix4),
-                &mvp
+                sizeof(PushConstants),
+                &push
             );
 
             const MeshRange* selectedMesh = nullptr;
