@@ -1385,6 +1385,7 @@ bool VulkanRenderer::createVertexBuffer(
 )
 {
     std::vector<Vertex> vertices;
+    std::vector<Vertex> cubeVertices;
 
     if (!atlas::loadMesh(
             assetManager,
@@ -1394,6 +1395,28 @@ bool VulkanRenderer::createVertexBuffer(
     {
         return false;
     }
+
+    if (!atlas::loadMesh(
+            assetManager,
+            "models/cube.atlasmesh",
+            cubeVertices
+        ))
+    {
+        return false;
+    }
+
+    // Сначала в общем буфере идёт пирамида, затем куб.
+    const uint32_t pyramidCount =
+        static_cast<uint32_t>(vertices.size());
+
+    const uint32_t cubeCount =
+        static_cast<uint32_t>(cubeVertices.size());
+
+    vertices.insert(
+        vertices.end(),
+        cubeVertices.begin(),
+        cubeVertices.end()
+    );
 
     const VkDeviceSize bufferSize =
         static_cast<VkDeviceSize>(vertices.size() * sizeof(Vertex));
@@ -1521,7 +1544,9 @@ bool VulkanRenderer::createVertexBuffer(
     );
 
     vkUnmapMemory(device_, vertexBufferMemory_);
-    vertexCount_ = static_cast<uint32_t>(vertices.size());
+    pyramidVertexCount_ = pyramidCount;
+    cubeFirstVertex_ = pyramidCount;
+    cubeVertexCount_ = cubeCount;
 
     logInfo("Vulkan: буфер вершин создан и заполнен.");
     return true;
@@ -1680,11 +1705,27 @@ bool VulkanRenderer::recordCommandBuffers(
                 &mvp
             );
 
+            uint32_t firstVertex = 0;
+            uint32_t vertexCount = 0;
+
+            switch (object.mesh)
+            {
+                case atlas::MeshType::Pyramid:
+                    firstVertex = 0;
+                    vertexCount = pyramidVertexCount_;
+                    break;
+
+                case atlas::MeshType::Cube:
+                    firstVertex = cubeFirstVertex_;
+                    vertexCount = cubeVertexCount_;
+                    break;
+            }
+
             vkCmdDraw(
                 commandBuffers_[i],
-                vertexCount_,
+                vertexCount,
                 1,
-                0,
+                firstVertex,
                 0
             );
         }
@@ -1865,7 +1906,9 @@ void VulkanRenderer::shutdown()
 {
     initialized_ = false;
     swapchainOutOfDate_ = false;
-    vertexCount_ = 0;
+    pyramidVertexCount_ = 0;
+    cubeFirstVertex_ = 0;
+    cubeVertexCount_ = 0;
 
     if (device_ != VK_NULL_HANDLE)
     {

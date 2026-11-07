@@ -43,6 +43,11 @@ int main() {
     std::vector<Vertex> vertices;
     assert(loadMesh(&asset, "pyramid", vertices) && vertices.size() == 18);
     assert(vertices[0].position[1] == 0.5f && vertices[0].color[1] == 0.80f);
+    std::ifstream cubeFile("ATLAS/app/src/main/assets/models/cube.atlasmesh");
+    assert(cubeFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(cubeFile)), {});
+    assert(loadMesh(&asset, "cube", vertices) && vertices.size() == 36);
+    asset.content = model;
     assert(!loadMesh(nullptr, "pyramid", vertices) && vertices.empty());
     assert(!loadMesh(&asset, nullptr, vertices));
     asset.missing = true; assert(!loadMesh(&asset, "pyramid", vertices)); asset.missing = false;
