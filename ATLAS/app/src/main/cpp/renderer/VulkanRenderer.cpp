@@ -299,6 +299,7 @@ bool VulkanRenderer::initialize(
         !createDevice() ||
         !createSwapchain() ||
         !createDepthResources() ||
+        !createTextureImage() ||
         !createRenderPass() ||
         !createTextureDescriptorLayout() ||
         !createGraphicsPipeline(assetManager) ||
@@ -947,6 +948,149 @@ bool VulkanRenderer::createDepthResources()
         static_cast<int>(depthFormat_)
     );
 
+    return true;
+}
+
+bool VulkanRenderer::createTextureImage()
+{
+    constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+
+    VkFormatProperties formatProperties{};
+
+    vkGetPhysicalDeviceFormatProperties(
+        physicalDevice_,
+        format,
+        &formatProperties
+    );
+
+    if ((formatProperties.optimalTilingFeatures &
+         VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: формат RGBA8 не поддерживает выборку текстуры."
+        );
+        return false;
+    }
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = format;
+    imageInfo.extent = {8, 8, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage =
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+        VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (!checkResult(
+            vkCreateImage(
+                device_,
+                &imageInfo,
+                nullptr,
+                &textureImage_
+            ),
+            "vkCreateImage для текстуры"
+        ))
+    {
+        return false;
+    }
+
+    VkMemoryRequirements requirements{};
+
+    vkGetImageMemoryRequirements(
+        device_,
+        textureImage_,
+        &requirements
+    );
+
+    VkPhysicalDeviceMemoryProperties memoryProperties{};
+
+    vkGetPhysicalDeviceMemoryProperties(
+        physicalDevice_,
+        &memoryProperties
+    );
+
+    uint32_t memoryTypeIndex = UINT32_MAX;
+
+    // Предпочитаем память устройства.
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+    {
+        const bool supported =
+            (requirements.memoryTypeBits & (1u << i)) != 0;
+
+        const bool deviceLocal =
+            (memoryProperties.memoryTypes[i].propertyFlags &
+             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0;
+
+        if (supported && deviceLocal)
+        {
+            memoryTypeIndex = i;
+            break;
+        }
+    }
+
+    // Если device-local память недоступна, ищем любой допустимый тип.
+    if (memoryTypeIndex == UINT32_MAX)
+    {
+        for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; ++i)
+        {
+            if ((requirements.memoryTypeBits & (1u << i)) != 0)
+            {
+                memoryTypeIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (memoryTypeIndex == UINT32_MAX)
+    {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: тип памяти для текстуры не найден."
+        );
+        return false;
+    }
+
+    VkMemoryAllocateInfo allocationInfo{};
+    allocationInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocationInfo.allocationSize = requirements.size;
+    allocationInfo.memoryTypeIndex = memoryTypeIndex;
+
+    if (!checkResult(
+            vkAllocateMemory(
+                device_,
+                &allocationInfo,
+                nullptr,
+                &textureMemory_
+            ),
+            "vkAllocateMemory для текстуры"
+        ))
+    {
+        return false;
+    }
+
+    if (!checkResult(
+            vkBindImageMemory(
+                device_,
+                textureImage_,
+                textureMemory_,
+                0
+            ),
+            "vkBindImageMemory для текстуры"
+        ))
+    {
+        return false;
+    }
+
+    logInfo("Vulkan: изображение текстуры 8x8 создано.");
     return true;
 }
 
@@ -2070,6 +2214,18 @@ void VulkanRenderer::shutdown()
     if (device_ != VK_NULL_HANDLE)
     {
         vkDeviceWaitIdle(device_);
+
+        if (textureImage_ != VK_NULL_HANDLE)
+        {
+            vkDestroyImage(device_, textureImage_, nullptr);
+            textureImage_ = VK_NULL_HANDLE;
+        }
+
+        if (textureMemory_ != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device_, textureMemory_, nullptr);
+            textureMemory_ = VK_NULL_HANDLE;
+        }
 
         if (imageAvailable_ != VK_NULL_HANDLE)
         {
