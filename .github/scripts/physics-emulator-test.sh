@@ -83,7 +83,7 @@ for pair in sand wood; do
   sleep 6
   adb logcat -d -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log"
 done
-python3 - <<'PYMATERIAL'
+python3 - <<'PYMATERIAL' 2> physics-diagnostics/material-error.txt || { cat physics-diagnostics/material-error.txt; echo "::error::$(tail -n 4 physics-diagnostics/material-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
 
