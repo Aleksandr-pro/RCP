@@ -1,0 +1,16 @@
+name: Temporary shader compilation
+on: [push]
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Compile shaders
+        run: |
+          set -e
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' > /dev/null
+          echo 'I3ZlcnNpb24gNDUwCgpsYXlvdXQobG9jYXRpb24gPSAwKSBpbiB2ZWMzIGluUG9zaXRpb247CmxheW91dChsb2NhdGlvbiA9IDEpIGluIHZlYzMgaW5Db2xvcjsKbGF5b3V0KGxvY2F0aW9uID0gMikgaW4gdmVjMyBpbk5vcm1hbDsKbGF5b3V0KGxvY2F0aW9uID0gMykgaW4gdmVjMiBpblVWOwoKbGF5b3V0KGxvY2F0aW9uID0gMCkgb3V0IGZsb2F0IHZlcnRleEJyaWdodG5lc3M7CmxheW91dChsb2NhdGlvbiA9IDEpIG91dCB2ZWMyIHZlcnRleFVWOwoKbGF5b3V0KHB1c2hfY29uc3RhbnQpIHVuaWZvcm0gUHVzaENvbnN0YW50cwp7CiAgICBtYXQ0IG12cDsKICAgIHZlYzQgbGlnaHREaXJlY3Rpb247Cn0gcHVzaENvbnN0YW50czsKCnZvaWQgbWFpbigpCnsKICAgIGdsX1Bvc2l0aW9uID0gcHVzaENvbnN0YW50cy5tdnAgKiB2ZWM0KGluUG9zaXRpb24sIDEuMCk7CgogICAgdmVjMyBub3JtYWwgPSBub3JtYWxpemUoaW5Ob3JtYWwpOwogICAgdmVjMyBsaWdodCA9IG5vcm1hbGl6ZShwdXNoQ29uc3RhbnRzLmxpZ2h0RGlyZWN0aW9uLnh5eik7CgogICAgZmxvYXQgZGlmZnVzZSA9IG1heChkb3Qobm9ybWFsLCBsaWdodCksIDAuMCk7CiAgICBmbG9hdCBicmlnaHRuZXNzID0gMC4yNSArIDAuNzUgKiBkaWZmdXNlOwoKICAgIHZlcnRleEJyaWdodG5lc3MgPSBicmlnaHRuZXNzOwogICAgdmVydGV4VVYgPSBpblVWOwp9Cg==' | base64 -d > /tmp/a.vert
+          echo 'I3ZlcnNpb24gNDUwCgpsYXlvdXQobG9jYXRpb24gPSAwKSBpbiBmbG9hdCB2ZXJ0ZXhCcmlnaHRuZXNzOwpsYXlvdXQobG9jYXRpb24gPSAxKSBpbiB2ZWMyIHZlcnRleFVWOwpsYXlvdXQoc2V0ID0gMCwgYmluZGluZyA9IDApIHVuaWZvcm0gc2FtcGxlcjJEIGltYWdlVGV4dHVyZTsKbGF5b3V0KGxvY2F0aW9uID0gMCkgb3V0IHZlYzQgb3V0Q29sb3I7Cgp2b2lkIG1haW4oKQp7CiAgICBvdXRDb2xvciA9IHZlYzQodGV4dHVyZShpbWFnZVRleHR1cmUsIHZlcnRleFVWKS5yZ2IgKiB2ZXJ0ZXhCcmlnaHRuZXNzLCAxLjApOwp9Cg==' | base64 -d > /tmp/a.frag
+          for stage in vert frag; do
+            "$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc" "/tmp/a.$stage" -o "/tmp/a.$stage.spv"
+            echo "::notice title=shader-$stage::$(base64 -w 0 /tmp/a.$stage.spv)"
+          done
