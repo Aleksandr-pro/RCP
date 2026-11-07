@@ -86,7 +86,7 @@ grep -q 'Vulkan: буфер вершин создан и заполнен' atlas
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
-python3 - <<'PYCOMPARE'
+if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
 before = Image.open('atlas-020-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
@@ -118,6 +118,13 @@ for row in range(3):
         else:
             assert deltas[row][col] < 10, (row, col, deltas)
 PYCOMPARE
+then
+  cat scene-compare.log
+  detail=$(cat scene-compare.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Scene comparison::$detail"
+  exit 1
+fi
+cat scene-compare.log
 sleep 4
 adb logcat -d -v epoch -s ATLAS_TEST:I '*:S' > atlas-frame-rate.txt
 python3 - <<'PYRATE'

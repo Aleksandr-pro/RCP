@@ -193,6 +193,7 @@ jobs:
             atlas-screen.png
             portrait.png
             atlas-020-reference.png
+            scene-compare.log
             landscape.png
             landscape-reverse.png
             portrait.json
