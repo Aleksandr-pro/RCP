@@ -5,7 +5,7 @@ layout(location = 1) in vec3 inColor;
 layout(location = 2) in vec3 inNormal;
 layout(location = 3) in vec2 inUV;
 
-layout(location = 0) out vec3 vertexColor;
+layout(location = 0) out float vertexBrightness;
 layout(location = 1) out vec2 vertexUV;
 
 layout(push_constant) uniform PushConstants
@@ -24,6 +24,6 @@ void main()
     float diffuse = max(dot(normal, light), 0.0);
     float brightness = 0.25 + 0.75 * diffuse;
 
-    vertexColor = inColor * brightness;
+    vertexBrightness = brightness;
     vertexUV = inUV;
 }

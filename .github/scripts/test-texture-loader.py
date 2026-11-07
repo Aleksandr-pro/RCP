@@ -34,6 +34,7 @@ void AAsset_close(AAsset* a) { delete a; }
 '''
 suffix = r'''
 using atlas::loadTestTexture;
+using atlas::loadOrnamentTexture;
 int main() {
     std::ifstream file("ATLAS/app/src/main/assets/textures/checker.rgba", std::ios::binary);
     assert(file);
@@ -51,6 +52,24 @@ int main() {
         }
     }
     assert(sum == 47520);
+    std::ifstream ornamentFile("ATLAS/app/src/main/assets/textures/ornament.rgba", std::ios::binary);
+    assert(ornamentFile);
+    const std::string ornament((std::istreambuf_iterator<char>(ornamentFile)), {});
+    assert(ornament.size() == 1024 * 559 * 4);
+    AAssetManager actual{ornament};
+    assert(loadOrnamentTexture(&actual, "ornament", pixels));
+    assert(pixels.size() == ornament.size());
+    assert(std::equal(pixels.begin(), pixels.end(), ornament.begin(), [](uint8_t a, char b) { return a == static_cast<uint8_t>(b); }));
+    for (size_t i = 3; i < pixels.size(); i += 4) assert(pixels[i] == 255);
+    assert(!loadOrnamentTexture(nullptr, "ornament", pixels) && pixels.empty());
+    assert(!loadOrnamentTexture(&actual, nullptr, pixels) && pixels.empty());
+    actual.missing = true; assert(!loadOrnamentTexture(&actual, "ornament", pixels) && pixels.empty()); actual.missing = false;
+    actual.shortRead = true; assert(!loadOrnamentTexture(&actual, "ornament", pixels) && pixels.empty()); actual.shortRead = false;
+    for (size_t length : {size_t(0), ornament.size() - 1, ornament.size() + 1}) {
+        actual.content.assign(length, 'x');
+        assert(!loadOrnamentTexture(&actual, "ornament", pixels) && pixels.empty());
+    }
+
     assert(!loadTestTexture(nullptr, "checker", pixels) && pixels.empty());
     assert(!loadTestTexture(&asset, nullptr, pixels) && pixels.empty());
     asset.missing = true; pixels.push_back(1); assert(!loadTestTexture(&asset, "checker", pixels) && pixels.empty()); asset.missing = false;
