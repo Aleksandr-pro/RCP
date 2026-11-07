@@ -86,7 +86,7 @@ for pair in sand wood; do
   kill "$logger" || true
   wait "$logger" || true
 done
-python3 - <<'PYMATERIAL' 2> physics-diagnostics/material-error.txt || { cat physics-diagnostics/material-error.txt; echo "::error::$(tail -n 4 physics-diagnostics/material-error.txt | tr '\n' ' ')"; exit 1; }
+python3 - <<'PYMATERIAL' 2> physics-diagnostics/material-error.txt || { cat physics-diagnostics/material-error.txt; for f in physics-diagnostics/material-*.log; do echo "::notice title=$f::$(head -n 12 "$f" | tr '\n' '|')"; done; echo "::error::$(tail -n 4 physics-diagnostics/material-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
 
