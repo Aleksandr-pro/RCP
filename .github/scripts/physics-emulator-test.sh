@@ -55,6 +55,12 @@ for first, second in zip(focus, focus[1:]):
     if first[0] == 'lost' and second[0] == 'gain':
         assert float(first[1]) > rest + 0.01 and float(first[2]) < 0, f'Pause did not occur during fall: {first}'
         assert abs(float(first[1])-float(second[1])) < 1e-6 and abs(float(first[2])-float(second[2])) < 1e-6
+        gain_marker = f'gain y={second[1]} velocity={second[2]}'
+        after_gain = text.split(gain_marker, 1)[1]
+        resumed = re.search(r'frame y=([-0-9.]+) velocity=([-0-9.]+)', after_gain)
+        assert resumed, 'No frame after focus gain'
+        assert abs(float(resumed[1])-float(second[1])) < 1e-6, 'Simulation jumped on first resumed frame'
+        assert abs(float(resumed[2])-float(second[2])) < 1e-6, 'Velocity changed on first resumed frame'
         break
 else: raise AssertionError('No focus loss/resume pair')
 print('Physics, landing, screen direction, focus suspension verified')
