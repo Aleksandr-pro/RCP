@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+trap 'status=$?; if [ "$status" -ne 0 ]; then echo "::error::Physics emulator test failed at line $LINENO: $BASH_COMMAND"; if [ -f physics-diagnostics/physics.log ]; then tail -n 40 physics-diagnostics/physics.log | while IFS= read -r line; do echo "::notice::$line"; done; fi; fi' EXIT
 mkdir -p physics-diagnostics
 package=com.atlas.engine
 adb logcat -G 16M
@@ -32,7 +33,7 @@ sleep 4
 adb exec-out screencap -p > physics-diagnostics/normal.png
 adb exec-out screencap -p > physics-diagnostics/resumed.png
 adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
-python3 - <<'PYCODE'
+python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-diagnostics/analysis-error.txt; echo "::error::$(tail -n 3 physics-diagnostics/analysis-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
 text = Path('physics-diagnostics/physics.log').read_text()
