@@ -14,7 +14,9 @@ adb logcat -c
 # As soon as the first simulation frame is logged, background the app while
 # the cube is still falling. The reader starts before the activity.
 (
-  timeout 30s adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
+  # logcat can remain blocked after the reader exits; its timeout is expected.
+  set +o pipefail
+  timeout 15s adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
     if [[ "$line" == *"frame y="* ]]; then
       adb shell input keyevent KEYCODE_HOME
       break
