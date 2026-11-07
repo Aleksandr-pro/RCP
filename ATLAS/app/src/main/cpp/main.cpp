@@ -11,10 +11,13 @@
 
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
+#include "physics/JumpTest.h"
 
 namespace
 {
     constexpr const char* LOG_TAG = "ATLAS";
+    // The third explicitly defined body is the isolated jump test cube.
+    constexpr size_t JUMP_BOX_INDEX = 2;
 
     struct EngineState
     {
@@ -26,6 +29,7 @@ namespace
             { 0.7f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f}
         };
         const std::vector<atlas::physics::Box> initialBoxes = boxes;
+        atlas::physics::JumpTest jumpTest{};
         std::vector<size_t> boxObjectIndices;
         bool physicsConfigured = false;
         bool physicsRunning = false;
@@ -82,6 +86,21 @@ namespace
             "%s",
             message
         );
+    }
+
+    bool isolatedJumpBox(const std::vector<atlas::physics::Box>& boxes)
+    {
+        if (JUMP_BOX_INDEX >= boxes.size()) return false;
+        const auto& jump = boxes[JUMP_BOX_INDEX];
+        for (size_t i = 0; i < boxes.size(); ++i)
+        {
+            if (i == JUMP_BOX_INDEX) continue;
+            const auto& other = boxes[i];
+            if (std::abs(jump.x - other.x) < jump.halfX + other.halfX &&
+                std::abs(jump.z - other.z) < jump.halfZ + other.halfZ)
+                return false;
+        }
+        return true;
     }
 
     bool bindPhysicsScene(EngineState* state)
@@ -157,7 +176,7 @@ namespace
                 return false;
             }
 
-            if ((!state->physicsConfigured && !atlas::physics::validate(state->platform, state->boxes)) ||
+            if ((!state->physicsConfigured && (!atlas::physics::validate(state->platform, state->boxes) || !isolatedJumpBox(state->boxes))) ||
                 !bindPhysicsScene(state) || !syncPhysicsScene(state) ||
                 !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
             {
@@ -167,6 +186,7 @@ namespace
             }
             if (!state->physicsConfigured)
             {
+                state->jumpTest = {};
                 state->physicsConfigured = true;
                 state->physicsRunning = true;
             }
@@ -400,6 +420,14 @@ namespace
             state->physicsAccumulator = std::min(state->physicsAccumulator + std::max(elapsed, 0.0), 0.25);
             while (state->physicsAccumulator + 1e-12 >= fixedStep)
             {
+                if (!atlas::physics::updateJumpTest(state->jumpTest, state->platform,
+                                                   state->boxes, JUMP_BOX_INDEX, 1.0f / 60.0f))
+                {
+                    logError("ATLAS: ошибка теста прыжка; симуляция остановлена.");
+                    state->physicsRunning = false;
+                    state->physicsAccumulator = 0.0;
+                    break;
+                }
                 if (!atlas::physics::step(state->platform, state->boxes, 1.0f / 60.0f))
                 {
                     logError("ATLAS: ошибка шага физики; симуляция остановлена.");

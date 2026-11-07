@@ -6,33 +6,37 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.26a.
-adb install -r reference-0.26a/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26b.
+adb install -r reference-0.26b/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
 adb logcat -c
-# As soon as the first simulation frame is logged, background the app while
-# the cube is still falling. The reader starts before the activity.
-(
-  # logcat can remain blocked after the reader exits; its timeout is expected.
-  set +o pipefail
-  timeout 15s stdbuf -o0 adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
-    if [[ "$line" == *"frame y="* && "$line" == *"velocity=-"* ]]; then
-      adb shell input keyevent KEYCODE_HOME
-      break
-    fi
-  done
-) &
-watcher=$!
+# The test-only build briefly holds each phase so HOME can be delivered reliably.
+pause_on_marker() {
+  local tag="$1" marker="$2"
+  (
+    set +o pipefail
+    timeout 15s stdbuf -o0 adb logcat -T 1 -v brief -s "$tag:I" '*:S' | while IFS= read -r line; do
+      if [[ "$line" == *"$marker"* ]]; then
+        adb shell input keyevent KEYCODE_HOME
+        break
+      fi
+    done
+  ) &
+  watcher=$!
+  adb shell am start -n "$package/.AtlasActivity"
+  wait "$watcher"
+  sleep 2
+}
+pause_on_marker ATLAS_PHYS_TEST 'velocity=-'
+pause_on_marker ATLAS_JUMP_TEST 'phase=waiting'
+pause_on_marker ATLAS_JUMP_TEST 'phase=jumping'
 adb shell am start -n "$package/.AtlasActivity"
-wait "$watcher"
-sleep 3
-adb shell am start -n "$package/.AtlasActivity"
-sleep 4
+sleep 5
 adb exec-out screencap -p > physics-diagnostics/normal.png
 adb exec-out screencap -p > physics-diagnostics/resumed.png
-adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
+adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_JUMP_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
 python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-diagnostics/analysis-error.txt; echo "::error::$(tail -n 3 physics-diagnostics/analysis-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
@@ -67,17 +71,30 @@ for first, second in zip(focus, focus[1:]):
         assert abs(float(resumed[2])-float(second[2])) < 1e-6, 'Velocity changed on first resumed frame'
         break
 else: raise AssertionError('No focus loss/resume pair')
-print('Physics, landing, screen direction, focus suspension verified')
+jump_frames = [tuple(map(float, x[:3])) + (int(x[3]),) for x in re.findall(r'ATLAS_JUMP_TEST: frame y=([-0-9.]+) velocity=([-0-9.]+) timer=([-0-9.]+) jumped=(\d+)', text)]
+assert any(j == 0 and abs(y + .6) < 1e-5 and .2 < timer < 1 for y, v, timer, j in jump_frames), 'No grounded wait'
+assert any(j and v > 1 for y, v, timer, j in jump_frames), 'No upward jump'
+assert any(j and v < -1 for y, v, timer, j in jump_frames), 'No descent'
+assert sum(j and abs(y + .6) < 1e-5 and abs(v) < 1e-5 for y, v, timer, j in jump_frames) > 10, 'No final landing'
+assert sum(a[3] == 0 and b[3] == 1 for a,b in zip(jump_frames, jump_frames[1:])) == 1, 'Jump was not one-shot'
+focus_jump = re.findall(r'ATLAS_JUMP_TEST: (lost|gain) y=([-0-9.]+) velocity=([-0-9.]+) timer=([-0-9.]+) jumped=(\d+)', text)
+pairs = [(a,b) for a,b in zip(focus_jump,focus_jump[1:]) if a[0]=='lost' and b[0]=='gain']
+assert len(pairs) >= 3, pairs
+for a,b in pairs:
+    assert a[1:] == b[1:], (a,b)
+assert any(float(a[3]) > .2 and a[4]=='0' for a,b in pairs), 'No pause during waiting'
+assert any(float(a[2]) > 0 and a[4]=='1' for a,b in pairs), 'No pause during ascent'
+print('Physics, one-shot jump, stack, screen direction and pauses verified')
 PYCODE
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-alternate.apk"
 adb shell am start -n "$package/.AtlasActivity"
-sleep 4
+sleep 9
 adb exec-out screencap -p > physics-diagnostics/alternate.png
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-reverse-light.apk"
 adb shell am start -n "$package/.AtlasActivity"
-sleep 4
+sleep 9
 adb exec-out screencap -p > physics-diagnostics/reverse-light.png
 python3 - <<'PYCODE'
 from PIL import Image, ImageChops
