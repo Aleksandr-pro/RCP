@@ -50,6 +50,7 @@ private:
     bool createDepthResources();
     bool createRenderPass();
     bool createTextureDescriptorLayout();
+    bool createTextureImage();
     bool createGraphicsPipeline(AAssetManager* assetManager);
 
     bool loadShaderModule(
@@ -101,6 +102,9 @@ private:
     VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthMemory_ = VK_NULL_HANDLE;
+
+    VkImage textureImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory textureMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;

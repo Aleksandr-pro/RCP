@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.25b/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.25c/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-025b-reference.png
+adb exec-out screencap -p > atlas-025c-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -84,6 +84,7 @@ grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
+grep -q 'Vulkan: изображение текстуры 8x8 создано.' atlas-log.txt
 grep -q 'Vulkan: descriptor layout текстуры создан.' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
@@ -92,7 +93,7 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-025b-reference.png').convert('RGB')
+before = Image.open('atlas-025c-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
@@ -102,7 +103,7 @@ region = (w // 5, h // 5, 4 * w // 5, 4 * h // 5)
 old_pixels = list(before.crop(region).getdata())
 new_pixels = list(after.crop(region).getdata())
 changed = sum(a != b for a, b in zip(old_pixels, new_pixels))
-print(f'0.25b vs 0.25c: {changed} changed scene pixels out of {len(old_pixels)}')
+print(f'0.25c vs 0.25d: {changed} changed scene pixels out of {len(old_pixels)}')
 assert changed < len(old_pixels) * 0.001, 'Scene changed even though texture is not used for rendering'
 PYCOMPARE
 then
@@ -169,6 +170,8 @@ adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
 adb logcat -d -s ATLAS_LAYOUT_TEST:I '*:S' > atlas-layout-lifecycle-log.txt
 grep -q 'pipeline layout destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'descriptor layout destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture image destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture memory freed' atlas-layout-lifecycle-log.txt
 grep 'ATLAS stats: FPS=' atlas-pre-background-log.txt > atlas-stats.txt
 # The test-only draw trace is emitted at drawFrame entry, not in production APKs.
 adb logcat -c
@@ -402,6 +405,8 @@ needles = ('Vulkan: descriptor layout текстуры создан.',
            'Vulkan: графический конвейер создан',
            'inject pipeline failure',
            'Vulkan: инициализация не завершена.',
+           'texture image destroyed',
+           'texture memory freed',
            'pipeline layout destroyed',
            'descriptor layout destroyed')
 start = 0
@@ -411,3 +416,31 @@ for needle in needles:
     start = pos + len(needle)
 print('Injected initialization failure released both layouts in the expected order')
 PYLAYOUT
+
+# Test failure after image creation and after memory allocation separately.
+for stage in before-allocation before-binding; do
+  adb shell am force-stop "$package"
+  adb install -r "$RUNNER_TEMP/atlas-texture-$stage.apk"
+  adb logcat -c
+  adb shell am start -n "$package/.AtlasActivity"
+  sleep 5
+  adb logcat -d -s ATLAS:I ATLAS_LAYOUT_TEST:I '*:S' > "atlas-texture-failure-$stage.txt"
+  python3 - "$stage" <<'PYTEXTURE'
+from pathlib import Path
+import sys
+stage = sys.argv[1]
+log = Path(f'atlas-texture-failure-{stage}.txt').read_text()
+expected = [f'injected {stage}', 'Vulkan: инициализация не завершена.', 'texture image destroyed']
+if stage == 'before-binding':
+    expected.append('texture memory freed')
+else:
+    assert 'texture memory freed' not in log, 'Unallocated texture memory was freed'
+assert 'Vulkan: рендерер готов' not in log
+cursor = 0
+for item in expected:
+    position = log.find(item, cursor)
+    assert position >= 0, f'Missing or out-of-order texture cleanup event: {item}'
+    cursor = position + len(item)
+print(f'{stage}: partial texture resources cleaned up correctly')
+PYTEXTURE
+done

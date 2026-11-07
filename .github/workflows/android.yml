@@ -69,7 +69,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25c-debug
+          name: ATLAS-0.25d-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with a third model
@@ -90,7 +90,7 @@ jobs:
       - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25c-test-cube-test
+          name: ATLAS-0.25d-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with reversed light
@@ -103,7 +103,7 @@ jobs:
       - name: Upload reversed-light test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25c-test-reversed-light
+          name: ATLAS-0.25d-test-reversed-light
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -142,11 +142,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.25b for update testing
+      - name: Check out ATLAS 0.25c for update testing
         uses: actions/checkout@v4
         with:
-          ref: 24fa9781c9b85c04732da194483d6fef29c29ee6
-          path: reference-0.25b
+          ref: 35159e594f61b7a0297e03985493ac48ccb15a88
+          path: reference-0.25c
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -154,8 +154,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.25b emulator APK
-        working-directory: reference-0.25b/ATLAS
+      - name: Build ATLAS 0.25c emulator APK
+        working-directory: reference-0.25c/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -187,6 +187,12 @@ jobs:
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
           text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
+          needle = '            vkDestroyImage(device_, textureImage_, nullptr);'
+          assert text.count(needle) == 1
+          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture image destroyed");')
+          needle = '            vkFreeMemory(device_, textureMemory_, nullptr);'
+          assert text.count(needle) == 1
+          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture memory freed");')
           needle = '            vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);'
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "pipeline layout destroyed");')
@@ -272,6 +278,34 @@ jobs:
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-layout-failure.apk"
           cp "$RUNNER_TEMP/renderer-failure-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
           (cd ATLAS && ./gradlew assembleDebug)
+      - name: Build partial texture failure emulator APKs
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          cp ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp "$RUNNER_TEMP/renderer-texture-backup.cpp"
+          for stage in before-allocation before-binding; do
+            cp "$RUNNER_TEMP/renderer-texture-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
+            python3 - "$stage" <<'PYCODE'
+          import sys
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
+          text = path.read_text()
+          start = text.index('bool VulkanRenderer::createTextureImage()')
+          end = text.index('bool VulkanRenderer::createRenderPass()', start)
+          source = text[start:end]
+          if sys.argv[1] == 'before-allocation':
+              needle = '    VkMemoryAllocateInfo allocationInfo{};'
+          else:
+              needle = '    if (!checkResult(\n            vkBindImageMemory('
+          assert source.count(needle) == 1
+          source = source.replace(needle, f'    __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "injected {sys.argv[1]}");\n    return false;\n\n' + needle)
+          path.write_text(text[:start] + source + text[end:])
+          PYCODE
+            (cd ATLAS && ./gradlew assembleDebug)
+            cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-texture-$stage.apk"
+          done
+          cp "$RUNNER_TEMP/renderer-texture-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
+          (cd ATLAS && ./gradlew assembleDebug)
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -309,10 +343,11 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
-            atlas-025b-reference.png
+            atlas-025c-reference.png
             scene-compare.log
             atlas-invalid-texture-log.txt
             atlas-layout-failure-log.txt
+            atlas-texture-failure-*.txt
             atlas-layout-lifecycle-log.txt
             model-compare.log
             light-compare.log
