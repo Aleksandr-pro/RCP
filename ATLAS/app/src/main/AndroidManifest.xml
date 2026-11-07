@@ -3,7 +3,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="ATLAS 0.19"
+        android:label="ATLAS 0.20"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
         <activity
