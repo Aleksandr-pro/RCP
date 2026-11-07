@@ -18,7 +18,7 @@ adb logcat -c
   # logcat can remain blocked after the reader exits; its timeout is expected.
   set +o pipefail
   timeout 15s adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
-    if [[ "$line" == *"frame y="* ]]; then
+    if [[ "$line" == *"frame y="* && "$line" == *"velocity=-"* ]]; then
       adb shell input keyevent KEYCODE_HOME
       break
     fi
