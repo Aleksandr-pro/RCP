@@ -34,7 +34,6 @@ void AAsset_close(AAsset* a) { delete a; }
 '''
 suffix = r'''
 using atlas::SceneObject;
-using atlas::MeshType;
 using atlas::loadScene;
 int main() {
     std::ifstream file("ATLAS/app/src/main/assets/scenes/test.atlasscene");
@@ -44,16 +43,21 @@ int main() {
     std::vector<SceneObject> objects;
     assert(loadScene(&asset, "scene", objects) && objects.size() == 9);
     for (size_t i = 0; i < objects.size(); ++i) {
-        assert(objects[i].mesh == ((i % 2 == 0) ? MeshType::Pyramid : MeshType::Cube));
+        assert(objects[i].meshName == ((i % 2 == 0) ? "pyramid" : "cube"));
         assert(objects[i].scale == 0.42f);
     }
     assert(objects[4].x == 0.0f && objects[4].y == 0.0f);
+    asset.content = "cube_test 0 0 0 1 0\n" + std::string(64, 'a') + " 0 0 0 1 0\n";
+    assert(loadScene(&asset, "arbitrary", objects) && objects.size() == 2);
+    assert(objects[0].meshName == "cube_test" && objects[1].meshName.size() == 64);
+    asset.content = scene;
     assert(!loadScene(nullptr, "scene", objects) && objects.empty());
     assert(!loadScene(&asset, nullptr, objects) && objects.empty());
     asset.missing = true; assert(!loadScene(&asset, "scene", objects) && objects.empty()); asset.missing = false;
     asset.shortRead = true; assert(!loadScene(&asset, "scene", objects) && objects.empty()); asset.shortRead = false;
     for (const std::string& bad : {std::string(""), std::string(" \n\t"), std::string("cube 0 0"),
-            scene + "oops", scene + "sphere 0 0 0 1 0", scene + "cube 0 0 0 0 0",
+            scene + "oops", scene + "../cube 0 0 0 1 0", scene + "Cube 0 0 0 1 0",
+            scene + "cube-test 0 0 0 1 0", scene + std::string(65, 'a') + " 0 0 0 1 0", scene + "cube 0 0 0 0 0",
             scene + "cube 0 0 0 -1 0", scene + "cube nan 0 0 1 0", std::string(1024*1024+1, ' ')}) {
         asset.content = bad; objects.push_back(SceneObject{});
         assert(!loadScene(&asset, "bad", objects) && objects.empty());

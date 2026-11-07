@@ -9,6 +9,7 @@
 #include <android/asset_manager.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 class VulkanRenderer
@@ -66,6 +67,14 @@ private:
     );
     bool createSyncObjects();
 
+    struct MeshRange
+    {
+        std::string name;
+        uint32_t firstVertex = 0;
+        uint32_t vertexCount = 0;
+    };
+
+    std::vector<MeshRange> meshRanges_;
     std::vector<atlas::SceneObject> sceneObjects_;
 
     VkInstance instance_ = VK_NULL_HANDLE;
@@ -98,9 +107,6 @@ private:
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    uint32_t pyramidVertexCount_ = 0;
-    uint32_t cubeFirstVertex_ = 0;
-    uint32_t cubeVertexCount_ = 0;
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
 
     VkSemaphore imageAvailable_ = VK_NULL_HANDLE;

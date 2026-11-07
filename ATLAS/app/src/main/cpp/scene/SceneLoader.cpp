@@ -103,11 +103,10 @@ namespace atlas
                 break;
             }
 
-            std::string meshName;
             SceneObject object{};
 
             if (!(input
-                >> meshName
+                >> object.meshName
                 >> object.x
                 >> object.y
                 >> object.z
@@ -125,22 +124,34 @@ namespace atlas
                 return false;
             }
 
-            if (meshName == "pyramid")
+            // Разрешаем только простые имена файлов:
+            // строчные латинские буквы, цифры и подчёркивание.
+            bool validName =
+                !object.meshName.empty() &&
+                object.meshName.size() <= 64;
+
+            for (char c : object.meshName)
             {
-                object.mesh = MeshType::Pyramid;
+                const bool allowed =
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '_';
+
+                if (!allowed)
+                {
+                    validName = false;
+                    break;
+                }
             }
-            else if (meshName == "cube")
-            {
-                object.mesh = MeshType::Cube;
-            }
-            else
+
+            if (!validName)
             {
                 __android_log_print(
                     ANDROID_LOG_ERROR,
                     LOG_TAG,
-                    "Неизвестная модель в сцене %s: %s",
+                    "Недопустимое имя модели в сцене %s: %s",
                     path,
-                    meshName.c_str()
+                    object.meshName.c_str()
                 );
 
                 objects.clear();

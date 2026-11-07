@@ -1,13 +1,9 @@
 #pragma once
 
+#include <string>
+
 namespace atlas
 {
-    enum class MeshType
-    {
-        Pyramid,
-        Cube
-    };
-
     struct SceneObject
     {
         float x;
@@ -17,6 +13,7 @@ namespace atlas
         float scale;
         float rotationOffset;
 
-        MeshType mesh;
+        // Имя файла модели без пути и расширения.
+        std::string meshName;
     };
 }

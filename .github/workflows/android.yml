@@ -60,26 +60,28 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.22-debug
+          name: ATLAS-0.23-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Build test APK with larger central pyramid
+      - name: Build test APK with a third model
         working-directory: ATLAS
         run: |
           python3 - <<'PYCODE'
           from pathlib import Path
           path = Path('app/src/main/assets/scenes/test.atlasscene')
           text = path.read_text()
-          before = 'pyramid  0.00  0.00 0.0 0.42  0.00'
-          after = 'pyramid  0.00  0.00 0.0 0.60  0.00'
+          before = 'cube     0.00  0.68 0.0 0.42  0.15'
+          after = 'cube_test 0.00  0.68 0.0 0.42  0.15'
           assert text.count(before) == 1
           path.write_text(text.replace(before, after))
+          model = path.parent.parent / 'models' / 'cube.atlasmesh'
+          (model.parent / 'cube_test.atlasmesh').write_bytes(model.read_bytes())
           PYCODE
           ./gradlew assembleDebug
-      - name: Upload larger-pyramid test APK
+      - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.22-test-center-0.60
+          name: ATLAS-0.23-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -118,11 +120,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.21 for update testing
+      - name: Check out ATLAS 0.22 for update testing
         uses: actions/checkout@v4
         with:
-          ref: e489bac99379709162c8010763cc83392d97af3b
-          path: reference-0.21
+          ref: 577bf07760ff74145a574b72ec39e572ef938612
+          path: reference-0.22
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -130,8 +132,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.21 emulator APK
-        working-directory: reference-0.21/ATLAS
+      - name: Build ATLAS 0.22 emulator APK
+        working-directory: reference-0.22/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -157,9 +159,9 @@ jobs:
           needle = '        for (const atlas::SceneObject& object : sceneObjects_)'
           assert text.count(needle) == 1
           text = text.replace(needle, '        uint32_t testDrawCount = 0, testPattern = 0, testInvalid = 0;\n' + needle)
-          needle = '            vkCmdDraw(\n                commandBuffers_[i],\n                vertexCount,\n                1,\n                firstVertex,\n                0\n            );'
+          needle = '            vkCmdDraw(\n                commandBuffers_[i],\n                selectedMesh->vertexCount,\n                1,\n                selectedMesh->firstVertex,\n                0\n            );'
           assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            if (testDrawCount == 4) __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST_SCENE", "center scale=%.2f", object.scale);\n            ++testDrawCount;\n            const bool testPyramid = object.mesh == atlas::MeshType::Pyramid;\n            testPattern = testPattern * 10 + (testPyramid ? 1 : 2);\n            if (firstVertex != (testPyramid ? 0u : 18u) || vertexCount != (testPyramid ? 18u : 36u)) ++testInvalid;')
+          text = text.replace(needle, needle + '\n            ++testDrawCount;\n            const bool testPyramid = object.meshName == "pyramid";\n            const bool testCubeTest = object.meshName == "cube_test";\n            testPattern = testPattern * 10 + (testPyramid ? 1 : 2);\n            if (selectedMesh->firstVertex != (testPyramid ? 0u : (testCubeTest ? 54u : 18u)) || selectedMesh->vertexCount != (testPyramid ? 18u : 36u)) ++testInvalid;')
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
           text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
@@ -187,14 +189,17 @@ jobs:
           from pathlib import Path
           path = Path('ATLAS/app/src/main/assets/scenes/test.atlasscene')
           text = path.read_text()
-          before = 'pyramid  0.00  0.00 0.0 0.42  0.00'
-          after = 'pyramid  0.00  0.00 0.0 0.60  0.00'
+          before = 'cube     0.00  0.68 0.0 0.42  0.15'
+          after = 'cube_test 0.00  0.68 0.0 0.42  0.15'
           assert text.count(before) == 1
           path.write_text(text.replace(before, after))
+          model = path.parent.parent / 'models' / 'cube.atlasmesh'
+          (model.parent / 'cube_test.atlasmesh').write_bytes(model.read_bytes())
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-scene-large.apk"
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-cube-test.apk"
           git checkout -- ATLAS/app/src/main/assets/scenes/test.atlasscene
+          rm ATLAS/app/src/main/assets/models/cube_test.atlasmesh
           (cd ATLAS && ./gradlew assembleDebug)
       - name: Enable KVM
         run: |
@@ -233,13 +238,13 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
-            atlas-021-reference.png
+            atlas-022-reference.png
             scene-compare.log
-            scene-scale-check.log
-            atlas-scene-large.png
-            atlas-scale-baseline.png
-            atlas-scale-baseline-log.txt
-            atlas-scale-large-log.txt
+            model-compare.log
+            atlas-cube-test.png
+            atlas-model-baseline.png
+            atlas-cube-test-log.txt
+            atlas-model-errors.txt
             landscape.png
             landscape-reverse.png
             portrait.json
