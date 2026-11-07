@@ -35,6 +35,19 @@ void AAsset_close(AAsset* a) { delete a; }
 suffix = r'''
 using atlas::Vertex;
 using atlas::loadMesh;
+void checkNormals(const std::vector<Vertex>& vertices) {
+    for (size_t i = 0; i < vertices.size(); i += 3) {
+        const Vertex& a = vertices[i];
+        float length = 0.0f, outward = 0.0f;
+        for (int k = 0; k < 3; ++k) {
+            length += a.normal[k] * a.normal[k];
+            outward += a.normal[k] * (a.position[k] + vertices[i+1].position[k] + vertices[i+2].position[k]) / 3.0f;
+            assert(a.normal[k] == vertices[i+1].normal[k] && a.normal[k] == vertices[i+2].normal[k]);
+        }
+        assert(std::abs(length - 1.0f) < 1e-5f);
+        assert(outward > 0.0f); // Origin lies inside both models.
+    }
+}
 int main() {
     std::ifstream file("ATLAS/app/src/main/assets/models/pyramid.atlasmesh");
     assert(file);
@@ -43,10 +56,12 @@ int main() {
     std::vector<Vertex> vertices;
     assert(loadMesh(&asset, "pyramid", vertices) && vertices.size() == 18);
     assert(vertices[0].position[1] == 0.5f && vertices[0].color[1] == 0.80f);
+    checkNormals(vertices);
     std::ifstream cubeFile("ATLAS/app/src/main/assets/models/cube.atlasmesh");
     assert(cubeFile);
     asset.content = std::string((std::istreambuf_iterator<char>(cubeFile)), {});
     assert(loadMesh(&asset, "cube", vertices) && vertices.size() == 36);
+    checkNormals(vertices);
     asset.content = model;
     assert(!loadMesh(nullptr, "pyramid", vertices) && vertices.empty());
     assert(!loadMesh(&asset, nullptr, vertices));
@@ -54,12 +69,13 @@ int main() {
     asset.shortRead = true; assert(!loadMesh(&asset, "pyramid", vertices)); asset.shortRead = false;
     for (const std::string& bad : {std::string(""), std::string(" \n\t"), std::string("0 0 0 0 0"),
             std::string("0 0 0 0 0 0"), model + "oops", model + "0 0 0 0 2 0",
-            model + "0 0 0 -1 0 0", model + "nan 0 0 0 0 0", std::string(1024*1024+1, ' ')}) {
+            model + "0 0 0 -1 0 0", model + "nan 0 0 0 0 0",
+            model + "0 0 0 1 1 1 0 0 0 1 1 1 0 0 0 1 1 1", std::string(1024*1024+1, ' ')}) {
         asset.content = bad; vertices.push_back(Vertex{});
         assert(!loadMesh(&asset, "bad", vertices) && vertices.empty());
     }
     asset.content.clear();
-    for (int i = 0; i < 30000; ++i) asset.content += "0 0 0 0 0 0\n";
+    for (int i = 0; i < 10000; ++i) asset.content += "0 0 0 0 0 0\n1 0 0 0 0 0\n0 1 0 0 0 0\n";
     assert(loadMesh(&asset, "limit", vertices) && vertices.size() == 30000);
     asset.content += "0 0 0 0 0 0\n";
     assert(!loadMesh(&asset, "too-many", vertices) && vertices.empty());

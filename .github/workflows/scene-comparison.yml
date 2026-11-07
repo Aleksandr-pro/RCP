@@ -59,6 +59,12 @@ jobs:
           assert source.count(needle) == 1
           source = source.replace(needle, '                state->activePointerId = -1;\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_TOUCH_TEST", "focus reset active=%d id=%d", state->touchActive, state->activePointerId);\n                __android_log_print(ANDROID_LOG_INFO, "ATLAS_PINCH_TEST", "focus reset pinch=%d id1=%d id2=%d gap=%.2f", state->pinchActive, state->pinchPointerId1, state->pinchPointerId2, state->lastPinchDistance);\n                logInfo("ATLAS: окно потеряло фокус.");')
           path.write_text(source)
+          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
+          source = path.read_text()
+          needle = '            push.lightDirection[3] = 0.0f;'
+          assert source.count(needle) == 1
+          source = source.replace(needle, needle + '\n            if (object.x == 0.0f && object.y == 0.0f) __android_log_print(ANDROID_LOG_INFO, "ATLAS_LIGHT_TEST", "camera=%.6f,%.6f light=%.6f,%.6f,%.6f", angleY, angleX, push.lightDirection[0], push.lightDirection[1], push.lightDirection[2]);')
+          path.write_text(source)
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)
           mkdir -p "$RUNNER_TEMP/pinch-classes" "$RUNNER_TEMP/pinch-dex"

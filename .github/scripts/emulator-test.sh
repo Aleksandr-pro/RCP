@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.22/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.23/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-022-reference.png
+adb exec-out screencap -p > atlas-023-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -90,7 +90,7 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-022-reference.png').convert('RGB')
+before = Image.open('atlas-023-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
@@ -103,8 +103,8 @@ def scene_mask(image):
 a, b = scene_mask(before), scene_mask(after)
 assert len(a) > 500 and len(b) > 500, (len(a), len(b))
 delta = sum(a.get(p) != b.get(p) for p in a.keys() | b.keys())
-print(f'0.22 vs 0.23: {delta} changed colored pixels out of {w*h}')
-assert delta < w * h * 0.001, 'Rendered scene differs from ATLAS 0.22'
+print(f'0.23 vs 0.24: {delta} changed colored pixels out of {w*h}')
+assert delta > 100, 'Lighting did not visibly change the scene'
 PYCOMPARE
 then
   cat scene-compare.log
@@ -314,5 +314,60 @@ adb logcat -d -s ATLAS:E '*:S' > atlas-model-errors.txt
 if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-model-errors.txt; then
   echo '::error::ATLAS reported an error while testing the third model'
   cat atlas-model-errors.txt
+  exit 1
+fi
+
+# Compare otherwise identical builds with opposite fixed scene-space lights.
+adb shell am force-stop "$package"
+adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb exec-out screencap -p > atlas-light-normal.png
+adb shell input swipe 60 350 220 350 700
+sleep 2
+adb exec-out screencap -p > atlas-light-normal-opposite.png
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/atlas-reversed-light.apk"
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb exec-out screencap -p > atlas-light-reversed.png
+adb shell input swipe 60 350 220 350 700
+sleep 2
+adb exec-out screencap -p > atlas-light-reversed-opposite.png
+if ! python3 - > light-compare.log 2>&1 <<'PYLIGHT'
+from PIL import Image
+brightened = darkened = 0
+for suffix in ('', '-opposite'):
+    normal = Image.open(f'atlas-light-normal{suffix}.png').convert('RGB')
+    reverse = Image.open(f'atlas-light-reversed{suffix}.png').convert('RGB')
+    assert normal.size == reverse.size
+    w, h = normal.size
+    view_brightened = view_darkened = 0
+    for y in range(h // 8, 7 * h // 8):
+        for x in range(w // 10, 9 * w // 10):
+            a, b = normal.getpixel((x, y)), reverse.getpixel((x, y))
+            if max(a) - min(a) < 20 and max(b) - min(b) < 20:
+                continue
+            difference = sum(b) - sum(a)
+            if difference > 40:
+                view_brightened += 1
+            if difference < -40:
+                view_darkened += 1
+    print(f'View {suffix or "initial"}: {view_brightened} pixels brighter, {view_darkened} darker')
+    brightened += view_brightened
+    darkened += view_darkened
+assert brightened > 100 and darkened > 100, 'Opposite light did not swap illuminated and shaded faces across views'
+PYLIGHT
+then
+  detail=$(cat light-compare.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Directional light test::$detail"
+  exit 1
+fi
+cat light-compare.log
+adb logcat -d -s ATLAS:E '*:S' > atlas-light-errors.txt
+if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-light-errors.txt; then
+  echo '::error::ATLAS reported an error in the reversed-light test'
+  cat atlas-light-errors.txt
   exit 1
 fi
