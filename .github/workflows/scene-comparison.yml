@@ -63,7 +63,7 @@ jobs:
           source = path.read_text()
           needle = '            push.lightDirection[3] = 0.0f;'
           assert source.count(needle) == 1
-          source = source.replace(needle, needle + '\n            if (object.x == 0.0f && object.y == 0.0f) __android_log_print(ANDROID_LOG_INFO, "ATLAS_LIGHT_TEST", "camera=%.6f,%.6f light=%.6f,%.6f,%.6f", angleY, angleX, push.lightDirection[0], push.lightDirection[1], push.lightDirection[2]);')
+          source = source.replace(needle, needle + '\n            if (object.scale > 2.0f) __android_log_print(ANDROID_LOG_INFO, "ATLAS_LIGHT_TEST", "camera=%.6f,%.6f light=%.6f,%.6f,%.6f", angleY, angleX, push.lightDirection[0], push.lightDirection[1], push.lightDirection[2]);')
           path.write_text(source)
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)

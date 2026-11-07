@@ -93,6 +93,14 @@ namespace atlas
 
         std::istringstream input(contents);
         input.imbue(std::locale::classic());
+        std::string firstToken;
+        input >> firstToken;
+        const bool nonUniform = firstToken == "ATLAS_SCENE_V2";
+        if (!nonUniform)
+        {
+            input.clear();
+            input.seekg(0);
+        }
 
         while (true)
         {
@@ -110,8 +118,9 @@ namespace atlas
                 >> object.x
                 >> object.y
                 >> object.z
-                >> object.scale
-                >> object.rotationOffset))
+                >> object.scale) ||
+                (nonUniform && !(input >> object.scaleY >> object.scaleZ)) ||
+                !(input >> object.rotationOffset))
             {
                 __android_log_print(
                     ANDROID_LOG_ERROR,
@@ -122,6 +131,12 @@ namespace atlas
 
                 objects.clear();
                 return false;
+            }
+
+            if (!nonUniform)
+            {
+                object.scaleY = object.scale;
+                object.scaleZ = object.scale;
             }
 
             // Разрешаем только простые имена файлов:
@@ -162,8 +177,10 @@ namespace atlas
                 !std::isfinite(object.y) ||
                 !std::isfinite(object.z) ||
                 !std::isfinite(object.scale) ||
+                !std::isfinite(object.scaleY) ||
+                !std::isfinite(object.scaleZ) ||
                 !std::isfinite(object.rotationOffset) ||
-                object.scale <= 0.0f)
+                object.scale <= 0.0f || object.scaleY <= 0.0f || object.scaleZ <= 0.0f)
             {
                 __android_log_print(
                     ANDROID_LOG_ERROR,

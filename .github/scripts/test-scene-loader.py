@@ -44,12 +44,20 @@ int main() {
     assert(loadScene(&asset, "scene", objects) && objects.size() == 9);
     for (size_t i = 0; i < objects.size(); ++i) {
         assert(objects[i].meshName == ((i % 2 == 0) ? "pyramid" : "cube"));
-        assert(objects[i].scale == 0.42f);
+        assert(objects[i].scale == 0.42f && objects[i].scaleY == 0.42f && objects[i].scaleZ == 0.42f);
     }
     assert(objects[4].x == 0.0f && objects[4].y == 0.0f);
     asset.content = "cube_test 0 0 0 1 0\n" + std::string(64, 'a') + " 0 0 0 1 0\n";
     assert(loadScene(&asset, "arbitrary", objects) && objects.size() == 2);
     assert(objects[0].meshName == "cube_test" && objects[1].meshName.size() == 64);
+    std::ifstream physicsFile("ATLAS/app/src/main/assets/scenes/physics.atlasscene");
+    assert(physicsFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(physicsFile)), {});
+    assert(loadScene(&asset, "physics", objects) && objects.size() == 2);
+    assert(objects[0].scale == 2.2f && objects[0].scaleY == 0.2f && objects[0].scaleZ == 1.5f);
+    assert(objects[1].scaleY == 0.55f);
+    asset.content = "ATLAS_SCENE_V2\ncube 0 0 0 2 0 2 0\n";
+    assert(!loadScene(&asset, "bad v2", objects) && objects.empty());
     asset.content = scene;
     assert(!loadScene(nullptr, "scene", objects) && objects.empty());
     assert(!loadScene(&asset, nullptr, objects) && objects.empty());

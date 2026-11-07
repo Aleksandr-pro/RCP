@@ -10,7 +10,9 @@ namespace atlas
         float y;
         float z;
 
-        float scale;
+        float scale; // X (or uniform scale in legacy scenes)
+        float scaleY;
+        float scaleZ;
         float rotationOffset;
 
         // Имя файла модели без пути и расширения.

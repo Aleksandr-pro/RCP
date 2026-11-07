@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "renderer/VulkanRenderer.h"
+#include "physics/FallingCube.h"
 
 namespace
 {
@@ -18,6 +19,8 @@ namespace
     struct EngineState
     {
         VulkanRenderer renderer;
+        atlas::FallingCube physics;
+        std::chrono::steady_clock::time_point physicsTime{};
 
         bool isActive = false;
         bool hasFocus = false;
@@ -105,6 +108,19 @@ namespace
                 logError("ATLAS: ошибка запуска Vulkan-рендерера.");
                 return false;
             }
+
+            const auto& objects = state->renderer.sceneObjects();
+            if (objects.size() != 2 ||
+                (!state->physics.configured() && !state->physics.configure(objects[0], objects[1])) ||
+                !state->renderer.setFallingCubeY(static_cast<float>(state->physics.y())) ||
+                !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
+            {
+                logError("ATLAS: некорректная физическая сцена.");
+                state->renderer.shutdown();
+                return false;
+            }
+            state->physics.resetAccumulator();
+            state->physicsTime = std::chrono::steady_clock::now();
 
             if (state->renderer.drawFrame())
             {
@@ -325,6 +341,16 @@ namespace
 
         const auto now = std::chrono::steady_clock::now();
         const auto workStartTime = now;
+
+        if (state->physicsTime != std::chrono::steady_clock::time_point{})
+            state->physics.advance(std::chrono::duration<double>(now - state->physicsTime).count());
+        state->physicsTime = now;
+        if (!state->renderer.setFallingCubeY(static_cast<float>(state->physics.y())))
+        {
+            logError("ATLAS: не удалось обновить положение куба.");
+            state->renderer.shutdown();
+            return;
+        }
 
         if (!state->renderer.updateRotation(
                 state->angle,
@@ -616,6 +642,8 @@ namespace
                 break;
 
             case APP_CMD_RESUME:
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 state->isActive = true;
                 state->lastFrameTime = std::chrono::steady_clock::now();
                 state->nextFrameTime = state->lastFrameTime;
@@ -623,6 +651,8 @@ namespace
                 break;
 
             case APP_CMD_GAINED_FOCUS:
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 state->hasFocus = true;
                 state->lastFrameTime = std::chrono::steady_clock::now();
                 state->nextFrameTime = state->lastFrameTime;
@@ -639,6 +669,8 @@ namespace
                 break;
 
             case APP_CMD_LOST_FOCUS:
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 state->hasFocus = false;
                 state->touchActive = false;
                 state->pinchActive = false;
@@ -675,16 +707,23 @@ namespace
                 break;
 
             case APP_CMD_PAUSE:
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 state->isActive = false;
                 logInfo("ATLAS: приложение приостановлено.");
                 break;
 
             case APP_CMD_TERM_WINDOW:
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 logInfo("ATLAS: окно закрывается, освобождаем Vulkan.");
                 state->renderer.shutdown();
                 break;
 
             case APP_CMD_STOP:
+                state->isActive = false;
+                state->physics.resetAccumulator();
+                state->physicsTime = {};
                 logInfo("ATLAS: приложение остановлено.");
                 break;
 

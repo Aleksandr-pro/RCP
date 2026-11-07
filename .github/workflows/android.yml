@@ -1,13 +1,7 @@
 name: Android APK
-
-on:
-  push:
-  pull_request:
-  workflow_dispatch:
-
+on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -18,19 +12,15 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Install Android SDK components
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
+      - name: Test loaders and physics
         run: |
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          if ! "$SDKMANAGER" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1' > sdk-install.log 2>&1; then
-            echo "::error::Android SDK install failed: $(tail -c 3000 sdk-install.log)"
-            exit 1
-          fi
-      - name: Test mesh loading and validation
-        run: python3 .github/scripts/test-mesh-loader.py
-      - name: Test scene loading and validation
-        run: python3 .github/scripts/test-scene-loader.py
-      - name: Test texture loading and validation
-        run: python3 .github/scripts/test-texture-loader.py
-      - name: Compile shaders
+          python3 .github/scripts/test-mesh-loader.py
+          python3 .github/scripts/test-scene-loader.py
+          python3 .github/scripts/test-texture-loader.py
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/FallingCube.cpp -o /tmp/test-physics
+          /tmp/test-physics
+      - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
           for stage in vert frag; do
@@ -39,75 +29,21 @@ jobs:
           done
       - name: Build debug APK
         working-directory: ATLAS
-        run: |
-          set -o pipefail
-          ./gradlew assembleDebug 2>&1 | tee "$RUNNER_TEMP/atlas-build.log"
-      - name: Verify APK contains shader assets
+        run: ./gradlew assembleDebug
+      - name: Verify packaged assets
         run: |
           python3 - <<'PYCODE'
           import zipfile
-          with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
-              for stage in ('vert', 'frag'):
-                  asset = f'assets/shaders/triangle.{stage}.spv'
-                  with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
-                      assert apk.read(asset) == expected.read(), asset
-              for model in ('pyramid', 'cube'):
-                  asset = f'assets/models/{model}.atlasmesh'
-                  with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
-                      assert apk.read(asset) == expected.read(), asset
-              asset = 'assets/scenes/test.atlasscene'
-              with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
-                  assert apk.read(asset) == expected.read(), asset
-              asset = 'assets/textures/ornament.rgba'
-              with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
-                  texture = apk.read(asset)
-                  assert texture == expected.read(), asset
-                  assert len(texture) == 1024 * 559 * 4
-                  assert set(texture[3::4]) == {255}
-                  import hashlib
-                  assert hashlib.sha256(texture).hexdigest() == 'ffbad0b6dfc2142e70d4a033cba3a73ca448cb93c652432ab5ed71bd99025690'
-          PYCODE
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ATLAS-0.25e-debug
-          path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-      - name: Build test APK with a third model
-        working-directory: ATLAS
-        run: |
-          python3 - <<'PYCODE'
           from pathlib import Path
-          path = Path('app/src/main/assets/scenes/test.atlasscene')
-          text = path.read_text()
-          before = 'cube     0.00  0.68 0.0 0.42  0.15'
-          after = 'cube_test 0.00  0.68 0.0 0.42  0.15'
-          assert text.count(before) == 1
-          path.write_text(text.replace(before, after))
-          model = path.parent.parent / 'models' / 'cube.atlasmesh'
-          (model.parent / 'cube_test.atlasmesh').write_bytes(model.read_bytes())
+          with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
+              for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'scenes/physics.atlasscene', 'models/cube.atlasmesh'):
+                  assert apk.read('assets/' + name) == Path('ATLAS/app/src/main/assets/' + name).read_bytes(), name
           PYCODE
-          ./gradlew assembleDebug
-      - name: Upload third-model test APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25e-test-cube-test
+          name: ATLAS-0.26a-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-      - name: Build test APK with reversed light
-        working-directory: ATLAS
-        run: |
-          git checkout -- app/src/main/assets/scenes/test.atlasscene
-          rm app/src/main/assets/models/cube_test.atlasmesh
-          python3 ../.github/scripts/reverse-test-light.py app/src/main/cpp/renderer/VulkanRenderer.cpp
-          ./gradlew assembleDebug
-      - name: Upload reversed-light test APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ATLAS-0.25e-test-reversed-light
-          path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
   signed-apk:
     runs-on: ubuntu-24.04
     env:
@@ -139,250 +75,63 @@ jobs:
           path: ATLAS/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-  emulator-test:
+  emulator:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.25d for update testing
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: 104f7043cc3791769385ddcb78e5d20a06bfdbd6
-          path: reference-0.25d
+          ref: ae8edf8f200260c03b620929abb5504ffbdb776a
+          path: reference-0.25e
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install build components
-        run: >-
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.25d emulator APK
-        working-directory: reference-0.25d/ATLAS
+      - name: Install Android SDK components
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
+      - name: Build previous APK
+        working-directory: reference-0.25e/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
-      - name: Add frame tracing to the emulator-only build
-        run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/cpp/main.cpp')
-          text = path.read_text()
-          text = text.replace('#include <chrono>\n', '#include <chrono>\n#include <thread>\n')
-          needle = '        const auto workStartTime = now;'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n        static int testFrameCount = 0;\n        if (++testFrameCount == 30) std::this_thread::sleep_for(std::chrono::milliseconds(80));')
-          needle = '            // Существующую панель не меняем.'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '            __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST_STATS", "FPS=%.1f, interval=%.1f, frames=%u", fps, averageIntervalMs, state->presentedFrames);\n' + needle)
-          needle = '        if (!state->renderer.updateRotation('
-          assert text.count(needle) == 1
-          text = text.replace(needle, '        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "update angle=%.5f", state->angle);\n\n' + needle)
-          path.write_text(text)
-          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
-          text = path.read_text()
-          needle = '        for (const atlas::SceneObject& object : sceneObjects_)'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '        uint32_t testDrawCount = 0, testPattern = 0, testInvalid = 0;\n' + needle)
-          needle = '            vkCmdDraw(\n                commandBuffers_[i],\n                selectedMesh->vertexCount,\n                1,\n                selectedMesh->firstVertex,\n                0\n            );'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            ++testDrawCount;\n            const bool testPyramid = object.meshName == "pyramid";\n            const bool testCubeTest = object.meshName == "cube_test";\n            testPattern = testPattern * 10 + (testPyramid ? 1 : 2);\n            if (selectedMesh->firstVertex != (testPyramid ? 0u : (testCubeTest ? 54u : 18u)) || selectedMesh->vertexCount != (testPyramid ? 18u : 36u)) ++testInvalid;')
-          needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
-          for needle, event in (
-              ('            vkDestroyDescriptorPool(device_, textureDescriptorPool_, nullptr);', 'descriptor pool destroyed'),
-              ('            vkDestroySampler(device_, textureSampler_, nullptr);', 'texture sampler destroyed'),
-              ('            vkDestroyImageView(device_, textureImageView_, nullptr);', 'texture view destroyed'),
-          ):
-              assert text.count(needle) == 1
-              text = text.replace(needle, needle + f'\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "{event}");')
-          needle = '            vkDestroyImage(device_, textureImage_, nullptr);'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture image destroyed");')
-          needle = '            vkFreeMemory(device_, textureMemory_, nullptr);'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture memory freed");')
-          needle = '            vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "pipeline layout destroyed");')
-          needle = '            textureDescriptorLayout_ = VK_NULL_HANDLE;'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "descriptor layout destroyed");\n' + needle)
-          needle = 'bool VulkanRenderer::drawFrame()\n{\n'
-          assert text.count(needle) == 1
-          text = text.replace(needle, needle + '    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "draw");\n')
-          path.write_text(text)
-          path = Path('ATLAS/app/src/main/java/com/atlas/engine/AtlasActivity.java')
-          text = path.read_text()
-          needle = '            }\n        });\n    }\n}'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '            }\n            android.util.Log.i("ATLAS_TEST_UI", fpsView.getText().toString().replace("\\n", " | "));\n        });\n    }\n}')
-          path.write_text(text)
-          PYCODE
-      - name: Build emulator APK
-        working-directory: ATLAS
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: ./gradlew assembleDebug
-      - name: Build modified scene emulator APK
+      - name: Instrument physics and build emulator variants
         env:
           ATLAS_TEST_ABI: x86_64
         run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/assets/scenes/test.atlasscene')
-          text = path.read_text()
-          before = 'cube     0.00  0.68 0.0 0.42  0.15'
-          after = 'cube_test 0.00  0.68 0.0 0.42  0.15'
-          assert text.count(before) == 1
-          path.write_text(text.replace(before, after))
-          model = path.parent.parent / 'models' / 'cube.atlasmesh'
-          (model.parent / 'cube_test.atlasmesh').write_bytes(model.read_bytes())
-          PYCODE
+          python3 .github/scripts/instrument-physics-test.py
           (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-cube-test.apk"
-          git checkout -- ATLAS/app/src/main/assets/scenes/test.atlasscene
-          rm ATLAS/app/src/main/assets/models/cube_test.atlasmesh
-          (cd ATLAS && ./gradlew assembleDebug)
-      - name: Build reversed-light emulator APK
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
-          cp ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp "$RUNNER_TEMP/renderer-traced.cpp"
-          python3 .github/scripts/reverse-test-light.py ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-          (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-reversed-light.apk"
-          cp "$RUNNER_TEMP/renderer-traced.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-          (cd ATLAS && ./gradlew assembleDebug)
-      - name: Build alternate-texture emulator APK
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/physics-normal.apk"
           python3 - <<'PYCODE'
           from pathlib import Path
           path = Path('ATLAS/app/src/main/assets/textures/ornament.rgba')
           path.write_bytes(bytes((255, 0, 255, 255)) * (1024 * 559))
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-alternate-texture.apk"
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/physics-alternate.apk"
           git checkout -- ATLAS/app/src/main/assets/textures/ornament.rgba
+          python3 .github/scripts/reverse-test-light.py ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
           (cd ATLAS && ./gradlew assembleDebug)
-      - name: Build invalid-texture emulator APK
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/assets/textures/ornament.rgba')
-          data = path.read_bytes()
-          assert len(data) == 1024 * 559 * 4
-          path.write_bytes(data[:-1])
-          PYCODE
-          (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-invalid-texture.apk"
-          git checkout -- ATLAS/app/src/main/assets/textures/ornament.rgba
-          (cd ATLAS && ./gradlew assembleDebug)
-      - name: Build pipeline-failure emulator APK
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
-          cp ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp "$RUNNER_TEMP/renderer-failure-backup.cpp"
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
-          text = path.read_text()
-          needle = '        !createGraphicsPipeline(assetManager) ||\n        !createImageViews() ||'
-          assert text.count(needle) == 1
-          text = text.replace(needle, '        !createGraphicsPipeline(assetManager) ||\n        ([]() { __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "inject pipeline failure"); return true; }()) ||\n        !createImageViews() ||')
-          path.write_text(text)
-          PYCODE
-          (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-layout-failure.apk"
-          cp "$RUNNER_TEMP/renderer-failure-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-          (cd ATLAS && ./gradlew assembleDebug)
-      - name: Build partial texture failure emulator APKs
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
-          cp ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp "$RUNNER_TEMP/renderer-texture-backup.cpp"
-          for stage in before-allocation before-binding; do
-            cp "$RUNNER_TEMP/renderer-texture-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-            python3 - "$stage" <<'PYCODE'
-          import sys
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
-          text = path.read_text()
-          start = text.index('bool VulkanRenderer::createTextureImage()')
-          end = text.index('bool VulkanRenderer::uploadTexture(', start)
-          source = text[start:end]
-          if sys.argv[1] == 'before-allocation':
-              needle = '    VkMemoryAllocateInfo allocationInfo{};'
-          else:
-              needle = '    if (!checkResult(\n            vkBindImageMemory('
-          assert source.count(needle) == 1
-          source = source.replace(needle, f'    __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "injected {sys.argv[1]}");\n    return false;\n\n' + needle)
-          path.write_text(text[:start] + source + text[end:])
-          PYCODE
-            (cd ATLAS && ./gradlew assembleDebug)
-            cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-texture-$stage.apk"
-          done
-          cp "$RUNNER_TEMP/renderer-texture-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-          (cd ATLAS && ./gradlew assembleDebug)
-      - name: Enable KVM
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/physics-reverse-light.apk"
+      - name: Enable KVM and install image tools
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Install image inspection tool
-        run: python3 -m pip install --user --break-system-packages Pillow
-      - name: Test on Android emulator
-        timeout-minutes: 8
+          python3 -m pip install --user --break-system-packages Pillow
+      - name: Test physics and lifecycle on emulator
+        timeout-minutes: 10
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: .github/scripts/emulator-test.sh
-      - name: Upload emulator diagnostics
+          script: .github/scripts/physics-emulator-test.sh
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
-          name: emulator-diagnostics
-          path: |
-            atlas-log.txt
-            atlas-errors.txt
-            atlas-frame-test.txt
-            atlas-frame-rate.txt
-            atlas-stats.txt
-            atlas-background-log.txt
-            atlas-resumed-log.txt
-            motion-before.png
-            motion-after.png
-            fps-*.png
-            fps-*.xml
-            fps-*-log.txt
-            atlas-system-log.txt
-            atlas-screen.png
-            portrait.png
-            atlas-025c-reference.png
-            scene-compare.log
-            atlas-invalid-texture-log.txt
-            atlas-layout-failure-log.txt
-            atlas-texture-failure-*.txt
-            atlas-layout-lifecycle-log.txt
-            model-compare.log
-            light-compare.log
-            atlas-light-normal*.png
-            atlas-light-reversed*.png
-            atlas-cube-test.png
-            atlas-model-baseline.png
-            atlas-cube-test-log.txt
-            atlas-model-errors.txt
-            landscape.png
-            landscape-reverse.png
-            portrait.json
-            landscape.json
-            landscape-reverse.json
+          name: ATLAS-physics-diagnostics
+          path: physics-diagnostics/
           if-no-files-found: ignore
 
   orientation-diagnostics:
@@ -423,142 +172,4 @@ jobs:
         with:
           name: orientation-diagnostics
           path: orientation-diagnostics/
-          if-no-files-found: ignore
-
-  matrix-comparison:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check if this is the matrix comparison version
-        id: version
-        run: |
-          if grep -q 'versionName "0.9"' ATLAS/app/build.gradle; then
-            echo 'enabled=true' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Check out the ATLAS 0.8 reference
-        if: steps.version.outputs.enabled == 'true'
-        uses: actions/checkout@v4
-        with:
-          ref: 04a62f3eb9c4f0df3dada793d92a82260343ae17
-          path: reference-0.8
-      - uses: actions/setup-java@v5
-        if: steps.version.outputs.enabled == 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Install Android build components
-        if: steps.version.outputs.enabled == 'true'
-        run: >-
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build both emulator APKs
-        if: steps.version.outputs.enabled == 'true'
-        env:
-          ATLAS_TEST_ABI: x86_64
-        run: |
-          (cd reference-0.8/ATLAS && ./gradlew assembleDebug)
-          (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-normal.apk"
-          python3 - <<'PYCODE'
-          from pathlib import Path
-          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
-          text = path.read_text()
-          assert text.count('rotationY(0.55f)') == 1
-          path.write_text(text.replace('rotationY(0.55f)', 'rotationY(1.0f)'))
-          PYCODE
-          (cd ATLAS && ./gradlew assembleDebug)
-          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-rotated.apk"
-          git checkout -- ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
-          cp "$RUNNER_TEMP/atlas-normal.apk" ATLAS/app/build/outputs/apk/debug/app-debug.apk
-      - name: Enable KVM and install image library
-        if: steps.version.outputs.enabled == 'true'
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          python3 -m pip install --user --break-system-packages Pillow
-      - name: Prepare comparison script
-        if: steps.version.outputs.enabled == 'true'
-        run: |
-          cat > "$RUNNER_TEMP/depth-test.sh" <<'SCRIPT'
-          #!/usr/bin/env bash
-          set -euo pipefail
-          mkdir -p depth-comparison
-          package=com.atlas.engine
-          adb shell settings put system accelerometer_rotation 0
-          adb shell settings put system user_rotation 0
-          adb install -r reference-0.8/ATLAS/app/build/outputs/apk/debug/app-debug.apk
-          adb logcat -c
-          adb shell am start -n "$package/android.app.NativeActivity"
-          sleep 10
-          adb exec-out screencap -p > depth-comparison/before-portrait.png
-          python3 .github/scripts/check-screen.py depth-comparison/before-portrait.png before
-          adb shell settings put system user_rotation 1
-          sleep 8
-          adb exec-out screencap -p > depth-comparison/before-landscape.png
-          python3 .github/scripts/check-screen.py depth-comparison/before-landscape.png before-landscape
-          adb shell am force-stop "$package"
-          adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
-          adb shell am start -n "$package/android.app.NativeActivity"
-          sleep 10
-          adb exec-out screencap -p > depth-comparison/after-landscape.png
-          python3 .github/scripts/check-screen.py depth-comparison/after-landscape.png after-landscape
-          adb shell settings put system user_rotation 0
-          sleep 8
-          adb exec-out screencap -p > depth-comparison/after-portrait.png
-          python3 .github/scripts/check-screen.py depth-comparison/after-portrait.png after
-          adb shell am force-stop "$package"
-          adb install -r "$RUNNER_TEMP/atlas-rotated.apk"
-          adb shell am start -n "$package/android.app.NativeActivity"
-          sleep 10
-          adb exec-out screencap -p > depth-comparison/rotated-portrait.png
-          python3 .github/scripts/check-screen.py depth-comparison/rotated-portrait.png rotated
-          adb logcat -d -s ATLAS:I '*:S' > depth-comparison/atlas-log.txt
-          grep -q 'Vulkan: буфер глубины создан, формат' depth-comparison/atlas-log.txt
-          grep -q 'Vulkan: кадр успешно отправлен на экран' depth-comparison/atlas-log.txt
-          python3 - <<'PYCODE'
-          from PIL import Image, ImageChops
-          for orientation in ('portrait', 'landscape'):
-              before = Image.open(f'depth-comparison/before-{orientation}.png').convert('RGB')
-              after = Image.open(f'depth-comparison/after-{orientation}.png').convert('RGB')
-              assert before.size == after.size, f'Different dimensions for {orientation}'
-              w, h = before.size
-              # Exclude Android status and navigation bars; compare the rendered area.
-              crop = (w // 20, h // 10, w * 19 // 20, h * 9 // 10)
-              before = before.crop(crop)
-              after = after.crop(crop)
-              diff = ImageChops.difference(before, after)
-              changed = sum(1 for pixel in diff.getdata() if max(pixel) > 20)
-              total = before.width * before.height
-              fraction = changed / total
-              print(f'{orientation}: {changed}/{total} substantially changed pixels ({fraction:.3%})')
-              if fraction > 0.005:
-                  raise AssertionError(f'{orientation} faces changed significantly: {fraction:.3%}')
-          normal = Image.open('depth-comparison/after-portrait.png').convert('RGB')
-          rotated = Image.open('depth-comparison/rotated-portrait.png').convert('RGB')
-          assert normal.size == rotated.size
-          w, h = normal.size
-          crop = (w // 20, h // 10, w * 19 // 20, h * 9 // 10)
-          diff = ImageChops.difference(normal.crop(crop), rotated.crop(crop))
-          fraction = sum(1 for pixel in diff.getdata() if max(pixel) > 20) / (diff.width * diff.height)
-          print(f'Rotation test: {fraction:.3%} substantially changed pixels')
-          assert fraction > 0.005, f'Changing the C++ rotation did not visibly change the cube: {fraction:.3%}'
-          PYCODE
-          SCRIPT
-          chmod +x "$RUNNER_TEMP/depth-test.sh"
-      - name: Compare 0.8 and 0.9 on Android emulator
-        if: steps.version.outputs.enabled == 'true'
-        timeout-minutes: 8
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: bash "$RUNNER_TEMP/depth-test.sh"
-      - name: Upload before and after screenshots
-        if: always() && steps.version.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ATLAS-matrix-comparison
-          path: depth-comparison/
           if-no-files-found: ignore

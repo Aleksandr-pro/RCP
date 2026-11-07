@@ -23,6 +23,7 @@ add_library(
     SHARED
     main.cpp
     renderer/VulkanRenderer.cpp
+    physics/FallingCube.cpp
     scene/MeshLoader.cpp
     scene/SceneLoader.cpp
     scene/TextureLoader.cpp

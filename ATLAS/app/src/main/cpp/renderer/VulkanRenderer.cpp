@@ -104,12 +104,12 @@ namespace
         }};
     }
 
-    Matrix4 uniformScale(float scale)
+    Matrix4 objectScale(float x, float y, float z)
     {
         return {{
-            scale, 0.0f,  0.0f,  0.0f,
-            0.0f,  scale, 0.0f,  0.0f,
-            0.0f,  0.0f,  scale, 0.0f,
+            x,    0.0f, 0.0f, 0.0f,
+            0.0f, y,    0.0f, 0.0f,
+            0.0f, 0.0f, z,    0.0f,
             0.0f,  0.0f,  0.0f,  1.0f
         }};
     }
@@ -136,7 +136,7 @@ namespace
 
         return {{
             scale / aspect, 0.0f,  0.0f,        0.0f,
-            0.0f,           scale, 0.0f,        0.0f,
+            0.0f,          -scale, 0.0f,        0.0f,
             0.0f,           0.0f,  depthScale,  1.0f,
             0.0f,           0.0f,  depthOffset, 0.0f
         }};
@@ -281,7 +281,7 @@ bool VulkanRenderer::initialize(
 
     if (!atlas::loadScene(
             assetManager,
-            "scenes/test.atlasscene",
+            "scenes/physics.atlasscene",
             sceneObjects_
         ) ||
         !createInstance() ||
@@ -2100,7 +2100,7 @@ bool VulkanRenderer::recordCommandBuffers(
 
             const Matrix4 model = multiply(
                 position,
-                multiply(rotation, uniformScale(object.scale))
+                multiply(rotation, objectScale(object.scale, object.scaleY, object.scaleZ))
             );
 
             const Matrix4 mvp = multiply(
@@ -2179,6 +2179,13 @@ bool VulkanRenderer::recordCommandBuffers(
         }
     }
 
+    return true;
+}
+
+bool VulkanRenderer::setFallingCubeY(float y)
+{
+    if (sceneObjects_.size() != 2 || !std::isfinite(y)) return false;
+    sceneObjects_[1].y = y;
     return true;
 }
 
