@@ -54,7 +54,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.19-debug
+          name: ATLAS-0.20-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -93,11 +93,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.18 for update testing
+      - name: Check out ATLAS 0.19 for update testing
         uses: actions/checkout@v4
         with:
-          ref: cd36b4739f44fbb7ca4f16b6cf6e2eb8873e14ae
-          path: reference-0.18
+          ref: 70f75c49976e09400e8206a4595389e97b881a7b
+          path: reference-0.19
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -105,8 +105,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.18 emulator APK
-        working-directory: reference-0.18/ATLAS
+      - name: Build ATLAS 0.19 emulator APK
+        working-directory: reference-0.19/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -191,6 +191,7 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
+            atlas-019-reference.png
             landscape.png
             landscape-reverse.png
             portrait.json

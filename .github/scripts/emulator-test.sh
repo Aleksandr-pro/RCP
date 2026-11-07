@@ -56,10 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.18/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.19/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
+adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
+adb exec-out screencap -p > atlas-019-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -82,6 +85,25 @@ grep -q 'Vulkan: буфер вершин создан и заполнен' atlas
 grep -q 'Vulkan: буфер глубины создан, формат' atlas-log.txt
 grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
+python3 - <<'PYCOMPARE'
+from PIL import Image
+before = Image.open('atlas-019-reference.png').convert('RGB')
+after = Image.open('portrait.png').convert('RGB')
+assert before.size == after.size, (before.size, after.size)
+w, h = before.size
+# Compare only bright, saturated scene pixels, excluding the FPS overlay and
+# Android bars, which may legitimately differ across the two launches.
+def scene_mask(image):
+    pixels = image.load()
+    return {(x, y): pixels[x, y] for y in range(h // 8, 7 * h // 8)
+            for x in range(w // 10, 9 * w // 10)
+            if max(pixels[x, y]) >= 100 and max(pixels[x, y]) - min(pixels[x, y]) >= 45}
+a, b = scene_mask(before), scene_mask(after)
+assert len(a) > 500 and len(b) > 500, (len(a), len(b))
+delta = sum(a.get(p) != b.get(p) for p in a.keys() | b.keys())
+print(f'0.19 vs 0.20: {delta} changed colored pixels out of {w*h}')
+assert delta < w * h * 0.001, 'Rendered scene differs from ATLAS 0.19'
+PYCOMPARE
 sleep 4
 adb logcat -d -v epoch -s ATLAS_TEST:I '*:S' > atlas-frame-rate.txt
 python3 - <<'PYRATE'
