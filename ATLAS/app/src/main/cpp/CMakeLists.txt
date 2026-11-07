@@ -23,6 +23,7 @@ add_library(
     SHARED
     main.cpp
     renderer/VulkanRenderer.cpp
+    scene/MeshLoader.cpp
 )
 
 target_compile_features(

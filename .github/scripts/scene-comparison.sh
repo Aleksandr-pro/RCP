@@ -57,6 +57,10 @@ sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-diagonal.png
 adb shell input swipe 210 410 60 230 700
 sleep 2
+# Explicitly exercise the tilt limit independently of swipe event sampling.
+adb shell input swipe 160 80 160 560 700
+adb shell input swipe 160 80 160 560 700
+sleep 2
 adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I '*:S' > scene-comparison/touch-log.txt
 adb logcat -c
 # Start a fresh landscape activity, so this gesture check is independent of

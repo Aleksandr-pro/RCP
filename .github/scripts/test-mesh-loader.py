@@ -3,10 +3,6 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-source = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp').read_text()
-start = source.index('    struct Vertex\n')
-end = source.index('    // Матрица 4×4.', start)
-loader = source[start:end]
 prefix = r'''
 #include <algorithm>
 #include <cassert>
@@ -20,11 +16,9 @@ prefix = r'''
 #include <string>
 #include <sys/types.h>
 #include <vector>
-constexpr const char* LOG_TAG = "ATLAS";
-constexpr int ANDROID_LOG_INFO = 4, ANDROID_LOG_ERROR = 6, AASSET_MODE_STREAMING = 2;
+#include "android/asset_manager.h"
+#include "android/log.h"
 int __android_log_print(int, const char*, const char*, ...) { return 0; }
-struct AAssetManager { std::string content; bool missing = false, shortRead = false; };
-struct AAsset { AAssetManager* manager; size_t offset = 0; };
 AAsset* AAssetManager_open(AAssetManager* m, const char*, int) {
     return m->missing ? nullptr : new AAsset{m};
 }
@@ -39,6 +33,8 @@ int AAsset_read(AAsset* a, void* target, size_t size) {
 void AAsset_close(AAsset* a) { delete a; }
 '''
 suffix = r'''
+using atlas::Vertex;
+using atlas::loadMesh;
 int main() {
     std::ifstream file("ATLAS/app/src/main/assets/models/pyramid.atlasmesh");
     assert(file);
@@ -47,6 +43,11 @@ int main() {
     std::vector<Vertex> vertices;
     assert(loadMesh(&asset, "pyramid", vertices) && vertices.size() == 18);
     assert(vertices[0].position[1] == 0.5f && vertices[0].color[1] == 0.80f);
+    std::ifstream cubeFile("ATLAS/app/src/main/assets/models/cube.atlasmesh");
+    assert(cubeFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(cubeFile)), {});
+    assert(loadMesh(&asset, "cube", vertices) && vertices.size() == 36);
+    asset.content = model;
     assert(!loadMesh(nullptr, "pyramid", vertices) && vertices.empty());
     assert(!loadMesh(&asset, nullptr, vertices));
     asset.missing = true; assert(!loadMesh(&asset, "pyramid", vertices)); asset.missing = false;
@@ -67,7 +68,28 @@ int main() {
 with tempfile.TemporaryDirectory() as directory:
     test = Path(directory) / 'test.cpp'
     exe = Path(directory) / 'test'
-    test.write_text(prefix + loader + suffix)
-    subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror', str(test), '-o', str(exe)], check=True)
+    android = Path(directory) / 'android'
+    android.mkdir()
+    (android / 'asset_manager.h').write_text('''#pragma once
+#include <string>
+#include <sys/types.h>
+#include <cstddef>
+struct AAssetManager { std::string content; bool missing = false, shortRead = false; };
+struct AAsset { AAssetManager* manager; size_t offset = 0; };
+constexpr int AASSET_MODE_STREAMING = 2;
+AAsset* AAssetManager_open(AAssetManager*, const char*, int);
+off_t AAsset_getLength(AAsset*);
+int AAsset_read(AAsset*, void*, size_t);
+void AAsset_close(AAsset*);
+''')
+    (android / 'log.h').write_text('''#pragma once
+constexpr int ANDROID_LOG_INFO = 4, ANDROID_LOG_ERROR = 6;
+int __android_log_print(int, const char*, const char*, ...);
+''')
+    header = Path('ATLAS/app/src/main/cpp/scene/MeshLoader.h').resolve()
+    source = Path('ATLAS/app/src/main/cpp/scene/MeshLoader.cpp').resolve()
+    test.write_text(prefix + f'\n#include "{header}"\n' + suffix)
+    subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Werror', '-I', directory,
+                    str(test), str(source), '-o', str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print('Production mesh loader validation passed')

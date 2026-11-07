@@ -47,14 +47,15 @@ jobs:
                   asset = f'assets/shaders/triangle.{stage}.spv'
                   with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
                       assert apk.read(asset) == expected.read(), asset
-              asset = 'assets/models/pyramid.atlasmesh'
-              with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
-                  assert apk.read(asset) == expected.read(), asset
+              for model in ('pyramid', 'cube'):
+                  asset = f'assets/models/{model}.atlasmesh'
+                  with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
+                      assert apk.read(asset) == expected.read(), asset
           PYCODE
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.19-debug
+          name: ATLAS-0.21-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -93,11 +94,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.18 for update testing
+      - name: Check out ATLAS 0.20 for update testing
         uses: actions/checkout@v4
         with:
-          ref: cd36b4739f44fbb7ca4f16b6cf6e2eb8873e14ae
-          path: reference-0.18
+          ref: dd438f782e1154f0733aa48876a1d2d384e399b6
+          path: reference-0.20
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -105,8 +106,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.18 emulator APK
-        working-directory: reference-0.18/ATLAS
+      - name: Build ATLAS 0.20 emulator APK
+        working-directory: reference-0.20/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -131,13 +132,13 @@ jobs:
           text = path.read_text()
           needle = '        for (const atlas::SceneObject& object : atlas::TEST_SCENE)'
           assert text.count(needle) == 1
-          text = text.replace(needle, '        uint32_t testDrawCount = 0;\n' + needle)
-          needle = '            vkCmdDraw(\n                commandBuffers_[i],\n                vertexCount_,\n                1,\n                0,\n                0\n            );'
+          text = text.replace(needle, '        uint32_t testDrawCount = 0, testPattern = 0, testInvalid = 0;\n' + needle)
+          needle = '            vkCmdDraw(\n                commandBuffers_[i],\n                vertexCount,\n                1,\n                firstVertex,\n                0\n            );'
           assert text.count(needle) == 1
-          text = text.replace(needle, needle + '\n            ++testDrawCount;\n            if (vertexCount_ != 18) __android_log_print(ANDROID_LOG_ERROR, "ATLAS_TEST", "unexpected vertex count=%u", vertexCount_);')
+          text = text.replace(needle, needle + '\n            ++testDrawCount;\n            const bool testPyramid = object.mesh == atlas::MeshType::Pyramid;\n            testPattern = testPattern * 10 + (testPyramid ? 1 : 2);\n            if (firstVertex != (testPyramid ? 0u : 18u) || vertexCount != (testPyramid ? 18u : 36u)) ++testInvalid;')
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
-          text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u vertices=%u", testDrawCount, vertexCount_); testDrawCountLogged = true; }\n' + needle)
+          text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
           needle = 'bool VulkanRenderer::drawFrame()\n{\n'
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "draw");\n')
@@ -191,6 +192,8 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
+            atlas-020-reference.png
+            scene-compare.log
             landscape.png
             landscape-reverse.png
             portrait.json
