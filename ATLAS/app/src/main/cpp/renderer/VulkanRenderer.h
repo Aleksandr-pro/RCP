@@ -51,6 +51,8 @@ private:
     bool createRenderPass();
     bool createTextureDescriptorLayout();
     bool createTextureImage();
+    bool uploadTexture(const std::vector<uint8_t>& pixels);
+    bool createTextureDescriptors();
     bool createGraphicsPipeline(AAssetManager* assetManager);
 
     bool loadShaderModule(
@@ -105,6 +107,10 @@ private:
 
     VkImage textureImage_ = VK_NULL_HANDLE;
     VkDeviceMemory textureMemory_ = VK_NULL_HANDLE;
+    VkImageView textureImageView_ = VK_NULL_HANDLE;
+    VkSampler textureSampler_ = VK_NULL_HANDLE;
+    VkDescriptorPool textureDescriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet textureDescriptorSet_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;

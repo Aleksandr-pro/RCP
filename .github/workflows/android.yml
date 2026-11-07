@@ -58,18 +58,19 @@ jobs:
               asset = 'assets/scenes/test.atlasscene'
               with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
                   assert apk.read(asset) == expected.read(), asset
-              asset = 'assets/textures/checker.rgba'
+              asset = 'assets/textures/ornament.rgba'
               with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
                   texture = apk.read(asset)
                   assert texture == expected.read(), asset
-                  assert len(texture) == 256 and sum(texture) == 47520
-                  assert texture == bytes(v for y in range(8) for x in range(8)
-                                          for v in ((255, 255, 255, 255) if (x+y)%2 == 0 else (70, 70, 70, 255)))
+                  assert len(texture) == 1024 * 559 * 4
+                  assert set(texture[3::4]) == {255}
+                  import hashlib
+                  assert hashlib.sha256(texture).hexdigest() == 'ffbad0b6dfc2142e70d4a033cba3a73ca448cb93c652432ab5ed71bd99025690'
           PYCODE
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25d-debug
+          name: ATLAS-0.25e-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with a third model
@@ -90,7 +91,7 @@ jobs:
       - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25d-test-cube-test
+          name: ATLAS-0.25e-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with reversed light
@@ -103,7 +104,7 @@ jobs:
       - name: Upload reversed-light test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25d-test-reversed-light
+          name: ATLAS-0.25e-test-reversed-light
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -142,11 +143,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.25c for update testing
+      - name: Check out ATLAS 0.25d for update testing
         uses: actions/checkout@v4
         with:
-          ref: 35159e594f61b7a0297e03985493ac48ccb15a88
-          path: reference-0.25c
+          ref: 104f7043cc3791769385ddcb78e5d20a06bfdbd6
+          path: reference-0.25d
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -154,8 +155,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.25c emulator APK
-        working-directory: reference-0.25c/ATLAS
+      - name: Build ATLAS 0.25d emulator APK
+        working-directory: reference-0.25d/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -187,6 +188,13 @@ jobs:
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
           text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
+          for needle, event in (
+              ('            vkDestroyDescriptorPool(device_, textureDescriptorPool_, nullptr);', 'descriptor pool destroyed'),
+              ('            vkDestroySampler(device_, textureSampler_, nullptr);', 'texture sampler destroyed'),
+              ('            vkDestroyImageView(device_, textureImageView_, nullptr);', 'texture view destroyed'),
+          ):
+              assert text.count(needle) == 1
+              text = text.replace(needle, needle + f'\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "{event}");')
           needle = '            vkDestroyImage(device_, textureImage_, nullptr);'
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture image destroyed");')
@@ -245,20 +253,33 @@ jobs:
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-reversed-light.apk"
           cp "$RUNNER_TEMP/renderer-traced.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
           (cd ATLAS && ./gradlew assembleDebug)
+      - name: Build alternate-texture emulator APK
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/assets/textures/ornament.rgba')
+          path.write_bytes(bytes((255, 0, 255, 255)) * (1024 * 559))
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-alternate-texture.apk"
+          git checkout -- ATLAS/app/src/main/assets/textures/ornament.rgba
+          (cd ATLAS && ./gradlew assembleDebug)
       - name: Build invalid-texture emulator APK
         env:
           ATLAS_TEST_ABI: x86_64
         run: |
           python3 - <<'PYCODE'
           from pathlib import Path
-          path = Path('ATLAS/app/src/main/assets/textures/checker.rgba')
+          path = Path('ATLAS/app/src/main/assets/textures/ornament.rgba')
           data = path.read_bytes()
-          assert len(data) == 256
+          assert len(data) == 1024 * 559 * 4
           path.write_bytes(data[:-1])
           PYCODE
           (cd ATLAS && ./gradlew assembleDebug)
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-invalid-texture.apk"
-          git checkout -- ATLAS/app/src/main/assets/textures/checker.rgba
+          git checkout -- ATLAS/app/src/main/assets/textures/ornament.rgba
           (cd ATLAS && ./gradlew assembleDebug)
       - name: Build pipeline-failure emulator APK
         env:
@@ -291,7 +312,7 @@ jobs:
           path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
           text = path.read_text()
           start = text.index('bool VulkanRenderer::createTextureImage()')
-          end = text.index('bool VulkanRenderer::createRenderPass()', start)
+          end = text.index('bool VulkanRenderer::uploadTexture(', start)
           source = text[start:end]
           if sys.argv[1] == 'before-allocation':
               needle = '    VkMemoryAllocateInfo allocationInfo{};'

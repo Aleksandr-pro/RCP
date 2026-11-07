@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.25c/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.25d/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-025c-reference.png
+adb exec-out screencap -p > atlas-025d-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -75,7 +75,7 @@ grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-initial-trace.txt
 grep -q 'update angle=' atlas-initial-trace.txt
 grep -q 'scene draw count=9 pattern=121212121 invalid=0' atlas-initial-trace.txt
-grep -q 'Текстура загружена: textures/checker.rgba, 8x8 RGBA, байт: 256, сумма: 47520' atlas-log.txt
+grep -q 'Текстура загружена: textures/ornament.rgba, 1024x559 RGBA, байт: 2289664' atlas-log.txt
 grep -q 'Сцена загружена: scenes/test.atlasscene, объектов: 9' atlas-log.txt
 grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18' atlas-log.txt
 grep -q 'Модель загружена: models/cube.atlasmesh, вершин: 36' atlas-log.txt
@@ -84,7 +84,7 @@ grep -q 'Vulkan: рендерер готов' atlas-log.txt
 grep -q 'Vulkan: выбран GPU' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.vert.spv' atlas-log.txt
 grep -q 'Шейдер загружен: shaders/triangle.frag.spv' atlas-log.txt
-grep -q 'Vulkan: изображение текстуры 8x8 создано.' atlas-log.txt
+grep -q 'Vulkan: изображение текстуры создано.' atlas-log.txt
 grep -q 'Vulkan: descriptor layout текстуры создан.' atlas-log.txt
 grep -q 'Vulkan: графический конвейер создан' atlas-log.txt
 grep -q 'Vulkan: буфер вершин создан и заполнен' atlas-log.txt
@@ -93,18 +93,18 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-025c-reference.png').convert('RGB')
+before = Image.open('atlas-025d-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
 # Ignore system bars and the FPS popup; compare the rendered scene itself.
-# The texture is not used by Vulkan yet, so this view must not change.
+# The new texture should visibly replace the old procedural checker.
 region = (w // 5, h // 5, 4 * w // 5, 4 * h // 5)
 old_pixels = list(before.crop(region).getdata())
 new_pixels = list(after.crop(region).getdata())
 changed = sum(a != b for a, b in zip(old_pixels, new_pixels))
-print(f'0.25c vs 0.25d: {changed} changed scene pixels out of {len(old_pixels)}')
-assert changed < len(old_pixels) * 0.001, 'Scene changed even though texture is not used for rendering'
+print(f'0.25d vs 0.25e: {changed} changed scene pixels out of {len(old_pixels)}')
+assert changed > len(old_pixels) * 0.005, 'Textured scene did not visibly change'
 PYCOMPARE
 then
   cat scene-compare.log
@@ -170,6 +170,9 @@ adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
 adb logcat -d -s ATLAS_LAYOUT_TEST:I '*:S' > atlas-layout-lifecycle-log.txt
 grep -q 'pipeline layout destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'descriptor layout destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'descriptor pool destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture sampler destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture view destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'texture image destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'texture memory freed' atlas-layout-lifecycle-log.txt
 grep 'ATLAS stats: FPS=' atlas-pre-background-log.txt > atlas-stats.txt
@@ -377,6 +380,30 @@ if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-light-errors.
   exit 1
 fi
 
+# A different asset in an otherwise identical build must alter rendered pixels.
+adb shell am force-stop "$package"
+adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb exec-out screencap -p > atlas-ornament-normal.png
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/atlas-alternate-texture.apk"
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb exec-out screencap -p > atlas-ornament-alternate.png
+python3 - <<'PYALT'
+from PIL import Image
+normal = Image.open('atlas-ornament-normal.png').convert('RGB')
+alt = Image.open('atlas-ornament-alternate.png').convert('RGB')
+assert normal.size == alt.size
+w, h = normal.size
+box = (w//5, h//5, 4*w//5, 4*h//5)
+a, b = list(normal.crop(box).getdata()), list(alt.crop(box).getdata())
+changed = sum(max(abs(x-y) for x,y in zip(p,q)) > 30 for p,q in zip(a,b))
+print(f'Alternate asset changed {changed} scene pixels')
+assert changed > len(a) * 0.005, 'Alternate asset did not visibly affect scene'
+PYALT
+
 # The invalid-texture APK is test-only: initialization must stop before Vulkan.
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/atlas-invalid-texture.apk"
@@ -384,7 +411,7 @@ adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 adb logcat -d -s ATLAS:I '*:S' > atlas-invalid-texture-log.txt
-grep -q 'Неверный размер текстуры textures/checker.rgba: 255, ожидалось 256' atlas-invalid-texture-log.txt
+grep -q 'Неверный размер текстуры: textures/ornament.rgba' atlas-invalid-texture-log.txt
 if grep -Eq 'Vulkan: выбран GPU|Vulkan: рендерер готов|Сцена загружена:' atlas-invalid-texture-log.txt; then
   echo '::error::Initialization continued despite an invalid texture'
   exit 1
@@ -405,9 +432,12 @@ needles = ('Vulkan: descriptor layout текстуры создан.',
            'Vulkan: графический конвейер создан',
            'inject pipeline failure',
            'Vulkan: инициализация не завершена.',
+           'pipeline layout destroyed',
+           'descriptor pool destroyed',
+           'texture sampler destroyed',
+           'texture view destroyed',
            'texture image destroyed',
            'texture memory freed',
-           'pipeline layout destroyed',
            'descriptor layout destroyed')
 start = 0
 for needle in needles:

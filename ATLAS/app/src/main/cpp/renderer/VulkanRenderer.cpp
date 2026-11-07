@@ -275,18 +275,9 @@ bool VulkanRenderer::initialize(
         return false;
     }
 
-    // Проверяем загрузку файла перед созданием Vulkan-ресурсов.
-    // В 0.25b данные ещё не передаются в GPU.
-    std::vector<uint8_t> testTexture;
-
-    if (!atlas::loadTestTexture(
-            assetManager,
-            "textures/checker.rgba",
-            testTexture
-        ))
-    {
+    std::vector<uint8_t> texturePixels;
+    if (!atlas::loadOrnamentTexture(assetManager, "textures/ornament.rgba", texturePixels))
         return false;
-    }
 
     if (!atlas::loadScene(
             assetManager,
@@ -300,8 +291,10 @@ bool VulkanRenderer::initialize(
         !createSwapchain() ||
         !createDepthResources() ||
         !createTextureImage() ||
+        !uploadTexture(texturePixels) ||
         !createRenderPass() ||
         !createTextureDescriptorLayout() ||
+        !createTextureDescriptors() ||
         !createGraphicsPipeline(assetManager) ||
         !createImageViews() ||
         !createFramebuffers() ||
@@ -978,7 +971,7 @@ bool VulkanRenderer::createTextureImage()
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
-    imageInfo.extent = {8, 8, 1};
+    imageInfo.extent = {atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1090,7 +1083,147 @@ bool VulkanRenderer::createTextureImage()
         return false;
     }
 
-    logInfo("Vulkan: изображение текстуры 8x8 создано.");
+    logInfo("Vulkan: изображение текстуры создано.");
+    return true;
+}
+
+bool VulkanRenderer::uploadTexture(const std::vector<uint8_t>& pixels)
+{
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
+    if (atlas::ORNAMENT_WIDTH > properties.limits.maxImageDimension2D ||
+        atlas::ORNAMENT_HEIGHT > properties.limits.maxImageDimension2D ||
+        pixels.size() != size_t(atlas::ORNAMENT_WIDTH) * atlas::ORNAMENT_HEIGHT * 4)
+        return false;
+
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    bool submitted = false;
+    auto cleanup = [&]() {
+        if (submitted) vkDeviceWaitIdle(device_);
+        if (pool) vkDestroyCommandPool(device_, pool, nullptr);
+        if (staging) vkDestroyBuffer(device_, staging, nullptr);
+        if (memory) vkFreeMemory(device_, memory, nullptr);
+    };
+    auto upload = [&]() -> bool {
+        VkBufferCreateInfo buffer{};
+        buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer.size = pixels.size();
+        buffer.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        buffer.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (!checkResult(vkCreateBuffer(device_, &buffer, nullptr, &staging), "texture staging buffer")) return false;
+        VkMemoryRequirements requirements{};
+        vkGetBufferMemoryRequirements(device_, staging, &requirements);
+        VkPhysicalDeviceMemoryProperties types{};
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &types);
+        uint32_t index = UINT32_MAX;
+        constexpr VkMemoryPropertyFlags flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        for (uint32_t i = 0; i < types.memoryTypeCount; ++i)
+            if ((requirements.memoryTypeBits & (1u << i)) && (types.memoryTypes[i].propertyFlags & flags) == flags) { index = i; break; }
+        if (index == UINT32_MAX) return false;
+        VkMemoryAllocateInfo allocation{};
+        allocation.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocation.allocationSize = requirements.size;
+        allocation.memoryTypeIndex = index;
+        if (!checkResult(vkAllocateMemory(device_, &allocation, nullptr, &memory), "texture staging memory")) return false;
+        if (!checkResult(vkBindBufferMemory(device_, staging, memory, 0), "texture staging bind")) return false;
+        void* mapped = nullptr;
+        if (!checkResult(vkMapMemory(device_, memory, 0, pixels.size(), 0, &mapped), "texture staging map")) return false;
+        std::memcpy(mapped, pixels.data(), pixels.size());
+        vkUnmapMemory(device_, memory);
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.queueFamilyIndex = queueFamilyIndex_;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        if (!checkResult(vkCreateCommandPool(device_, &poolInfo, nullptr, &pool), "texture command pool")) return false;
+        VkCommandBufferAllocateInfo allocate{};
+        allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocate.commandPool = pool;
+        allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocate.commandBufferCount = 1;
+        if (!checkResult(vkAllocateCommandBuffers(device_, &allocate, &cmd), "texture command buffer")) return false;
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        if (!checkResult(vkBeginCommandBuffer(cmd, &begin), "texture begin")) return false;
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = textureImage_;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        VkBufferImageCopy region{};
+        region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        region.imageExtent = {atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT, 1};
+        vkCmdCopyBufferToImage(cmd, staging, textureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        if (!checkResult(vkEndCommandBuffer(cmd), "texture end")) return false;
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &cmd;
+        if (!checkResult(vkQueueSubmit(queue_, 1, &submit, VK_NULL_HANDLE), "texture submit")) return false;
+        submitted = true;
+        if (!checkResult(vkQueueWaitIdle(queue_), "texture upload wait")) return false;
+        submitted = false;
+        return true;
+    };
+    const bool ok = upload();
+    cleanup();
+    if (ok) logInfo("Vulkan: пиксели текстуры загружены.");
+    return ok;
+}
+
+bool VulkanRenderer::createTextureDescriptors()
+{
+    VkImageViewCreateInfo view{};
+    view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view.image = textureImage_;
+    view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view.format = VK_FORMAT_R8G8B8A8_UNORM;
+    view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    if (!checkResult(vkCreateImageView(device_, &view, nullptr, &textureImageView_), "texture view")) return false;
+    VkSamplerCreateInfo sampler{};
+    sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sampler.magFilter = VK_FILTER_NEAREST;
+    sampler.minFilter = VK_FILTER_NEAREST;
+    sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    if (!checkResult(vkCreateSampler(device_, &sampler, nullptr, &textureSampler_), "texture sampler")) return false;
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    VkDescriptorPoolCreateInfo pool{};
+    pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.maxSets = 1;
+    pool.poolSizeCount = 1;
+    pool.pPoolSizes = &poolSize;
+    if (!checkResult(vkCreateDescriptorPool(device_, &pool, nullptr, &textureDescriptorPool_), "texture descriptor pool")) return false;
+    VkDescriptorSetAllocateInfo allocation{};
+    allocation.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocation.descriptorPool = textureDescriptorPool_;
+    allocation.descriptorSetCount = 1;
+    allocation.pSetLayouts = &textureDescriptorLayout_;
+    if (!checkResult(vkAllocateDescriptorSets(device_, &allocation, &textureDescriptorSet_), "texture descriptor set")) return false;
+    VkDescriptorImageInfo image{textureSampler_, textureImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = textureDescriptorSet_;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
     return true;
 }
 
@@ -1925,6 +2058,9 @@ bool VulkanRenderer::recordCommandBuffers(
             graphicsPipeline_
         );
 
+        vkCmdBindDescriptorSets(commandBuffers_[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout_, 0, 1, &textureDescriptorSet_, 0, nullptr);
+
         const VkBuffer vertexBuffers[] = {vertexBuffer_};
         const VkDeviceSize offsets[] = {0};
 
@@ -2215,18 +2351,6 @@ void VulkanRenderer::shutdown()
     {
         vkDeviceWaitIdle(device_);
 
-        if (textureImage_ != VK_NULL_HANDLE)
-        {
-            vkDestroyImage(device_, textureImage_, nullptr);
-            textureImage_ = VK_NULL_HANDLE;
-        }
-
-        if (textureMemory_ != VK_NULL_HANDLE)
-        {
-            vkFreeMemory(device_, textureMemory_, nullptr);
-            textureMemory_ = VK_NULL_HANDLE;
-        }
-
         if (imageAvailable_ != VK_NULL_HANDLE)
         {
             vkDestroySemaphore(device_, imageAvailable_, nullptr);
@@ -2270,6 +2394,33 @@ void VulkanRenderer::shutdown()
         {
             vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
             pipelineLayout_ = VK_NULL_HANDLE;
+        }
+
+        if (textureDescriptorPool_ != VK_NULL_HANDLE)
+        {
+            vkDestroyDescriptorPool(device_, textureDescriptorPool_, nullptr);
+            textureDescriptorPool_ = VK_NULL_HANDLE;
+            textureDescriptorSet_ = VK_NULL_HANDLE;
+        }
+        if (textureSampler_ != VK_NULL_HANDLE)
+        {
+            vkDestroySampler(device_, textureSampler_, nullptr);
+            textureSampler_ = VK_NULL_HANDLE;
+        }
+        if (textureImageView_ != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device_, textureImageView_, nullptr);
+            textureImageView_ = VK_NULL_HANDLE;
+        }
+        if (textureImage_ != VK_NULL_HANDLE)
+        {
+            vkDestroyImage(device_, textureImage_, nullptr);
+            textureImage_ = VK_NULL_HANDLE;
+        }
+        if (textureMemory_ != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(device_, textureMemory_, nullptr);
+            textureMemory_ = VK_NULL_HANDLE;
         }
 
         if (textureDescriptorLayout_ != VK_NULL_HANDLE)

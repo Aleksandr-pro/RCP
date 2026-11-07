@@ -84,9 +84,9 @@ for orientation in ('portrait', 'landscape'):
     left_angle = angle_distance(final_yaw, initial_yaw)
     print(f'{orientation}: angular deviation after right={right_angle:.4f}, after reverse={left_angle:.4f}')
     assert left_angle < right_angle, f'Reverse swipe did not move back toward the initial orientation: {orientation}'
-    # Android can omit final swipe samples; only demand near-identical pixels
-    # when the recorded camera angle actually returned close to its starting value.
-    if left_angle < 0.02:
+    # Detailed textures change many pixels even with a small pose difference.
+    # Only compare pixels when the measured return is essentially exact.
+    if left_angle < 0.001:
         assert left_diff < right_diff * 0.5, f'View did not return after a nearly symmetric gesture: {orientation}'
     for direction in ('down', 'diagonal'):
         image = Image.open(f'scene-comparison/touch-{orientation}-{direction}.png').convert('RGB')
