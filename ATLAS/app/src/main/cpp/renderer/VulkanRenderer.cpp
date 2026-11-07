@@ -2182,10 +2182,10 @@ bool VulkanRenderer::recordCommandBuffers(
     return true;
 }
 
-bool VulkanRenderer::setFallingCubeY(float y)
+bool VulkanRenderer::setObjectY(size_t index, float y)
 {
-    if (sceneObjects_.size() != 2 || !std::isfinite(y)) return false;
-    sceneObjects_[1].y = y;
+    if (index >= sceneObjects_.size() || !std::isfinite(y)) return false;
+    sceneObjects_[index].y = y;
     return true;
 }
 

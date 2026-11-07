@@ -6,8 +6,8 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.25e.
-adb install -r reference-0.25e/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26a.
+adb install -r reference-0.26a/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
@@ -37,13 +37,17 @@ python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-
 from pathlib import Path
 import re
 text = Path('physics-diagnostics/physics.log').read_text()
-assert 'Сцена загружена: scenes/physics.atlasscene, объектов: 2' in text
+assert 'Сцена загружена: scenes/physics.atlasscene, объектов: 4' in text
 assert 'Vulkan: рендерер готов' in text
 assert 'Текстура загружена: textures/ornament.rgba' in text
 samples = [tuple(map(float, x)) for x in re.findall(r'frame y=([-0-9.]+) velocity=([-0-9.]+) rest=([-0-9.]+)', text)]
 assert len(samples) > 15, len(samples)
 rest = samples[0][2]
 assert all(y >= rest - 1e-6 for y, v, r in samples)
+for index, target in enumerate((-0.6, 0.0, -0.6)):
+    states = [tuple(map(float, v)) for v in re.findall(rf'box={index} y=([-0-9.]+) velocity=([-0-9.]+)', text)]
+    assert len(states) > 15 and any(v < -0.1 for y, v in states), f'Box {index} did not fall'
+    assert sum(abs(y-target) < 1e-5 and abs(v) < 1e-5 for y,v in states) > 10, f'Box {index} did not settle'
 assert any(v < -0.1 for y, v, r in samples), 'No fall recorded'
 assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y, v, r in samples) > 10, 'No stable landing'
 for a,b in zip(samples, samples[1:]):

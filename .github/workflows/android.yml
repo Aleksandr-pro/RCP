@@ -18,7 +18,7 @@ jobs:
           python3 .github/scripts/test-mesh-loader.py
           python3 .github/scripts/test-scene-loader.py
           python3 .github/scripts/test-texture-loader.py
-          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/FallingCube.cpp -o /tmp/test-physics
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-physics
           /tmp/test-physics
       - name: Verify SPIR-V
         run: |
@@ -41,7 +41,7 @@ jobs:
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.26a-debug
+          name: ATLAS-0.26b-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:
@@ -81,8 +81,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: ae8edf8f200260c03b620929abb5504ffbdb776a
-          path: reference-0.25e
+          ref: 93bcda838365590abd3e9c2cdd180bea1d8a33fe
+          path: reference-0.26a
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -90,7 +90,7 @@ jobs:
       - name: Install Android SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
       - name: Build previous APK
-        working-directory: reference-0.25e/ATLAS
+        working-directory: reference-0.26a/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug

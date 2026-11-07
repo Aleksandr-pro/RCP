@@ -39,7 +39,7 @@ public:
     void shutdown();
 
     const std::vector<atlas::SceneObject>& sceneObjects() const { return sceneObjects_; }
-    bool setFallingCubeY(float y);
+    bool setObjectY(size_t index, float y);
     bool isInitialized() const;
     bool isSwapchainOutOfDate() const;
 

@@ -10,7 +10,7 @@
 #include <cstdint>
 
 #include "renderer/VulkanRenderer.h"
-#include "physics/FallingCube.h"
+#include "physics/VerticalPhysics.h"
 
 namespace
 {
@@ -19,7 +19,17 @@ namespace
     struct EngineState
     {
         VulkanRenderer renderer;
-        atlas::FallingCube physics;
+        atlas::physics::Platform platform{0.0f, -1.0f, 0.0f, 2.0f, 0.1f, 1.0f};
+        std::vector<atlas::physics::Box> boxes{
+            {-0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
+            {-0.6f, 1.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
+            { 0.7f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f}
+        };
+        const std::vector<atlas::physics::Box> initialBoxes = boxes;
+        std::vector<size_t> boxObjectIndices;
+        bool physicsConfigured = false;
+        bool physicsRunning = false;
+        double physicsAccumulator = 0.0;
         std::chrono::steady_clock::time_point physicsTime{};
 
         bool isActive = false;
@@ -74,6 +84,44 @@ namespace
         );
     }
 
+    bool bindPhysicsScene(EngineState* state)
+    {
+        const auto& objects = state->renderer.sceneObjects();
+        if (objects.size() != state->initialBoxes.size() + 1) return false;
+        std::vector<bool> used(objects.size(), false);
+        auto findObject = [&](float x, float y, float z, float sx, float sy, float sz) -> size_t
+        {
+            for (size_t i = 0; i < objects.size(); ++i)
+            {
+                const auto& o = objects[i];
+                auto near = [](float a, float b) { return std::abs(a-b) < 0.00001f; };
+                if (!used[i] && o.meshName == "cube" && near(o.rotationOffset, 0.0f) &&
+                    near(o.x,x) && near(o.y,y) && near(o.z,z) &&
+                    near(o.scale,sx) && near(o.scaleY,sy) && near(o.scaleZ,sz))
+                { used[i] = true; return i; }
+            }
+            return objects.size();
+        };
+        const auto& p = state->platform;
+        if (findObject(p.x,p.y,p.z,2*p.halfX,2*p.halfY,2*p.halfZ) == objects.size()) return false;
+        state->boxObjectIndices.clear();
+        for (const auto& box : state->initialBoxes)
+        {
+            const size_t i = findObject(box.x,box.y,box.z,2*box.halfX,2*box.halfY,2*box.halfZ);
+            if (i == objects.size()) return false;
+            state->boxObjectIndices.push_back(i);
+        }
+        return true;
+    }
+
+    bool syncPhysicsScene(EngineState* state)
+    {
+        if (state->boxes.size() != state->boxObjectIndices.size()) return false;
+        for (size_t i = 0; i < state->boxes.size(); ++i)
+            if (!state->renderer.setObjectY(state->boxObjectIndices[i], state->boxes[i].y)) return false;
+        return true;
+    }
+
     // Для версии 0.3 при изменении окна пересоздаём весь рендерер.
     // Это не самое быстрое решение, но оно проще для первой проверки.
     bool restartRenderer(android_app* app, EngineState* state)
@@ -109,17 +157,20 @@ namespace
                 return false;
             }
 
-            const auto& objects = state->renderer.sceneObjects();
-            if (objects.size() != 2 ||
-                (!state->physics.configured() && !state->physics.configure(objects[0], objects[1])) ||
-                !state->renderer.setFallingCubeY(static_cast<float>(state->physics.y())) ||
+            if ((!state->physicsConfigured && !atlas::physics::validate(state->platform, state->boxes)) ||
+                !bindPhysicsScene(state) || !syncPhysicsScene(state) ||
                 !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
             {
-                logError("ATLAS: некорректная физическая сцена.");
+                logError("ATLAS: недопустимое физическое состояние или связь объектов сцены.");
                 state->renderer.shutdown();
                 return false;
             }
-            state->physics.resetAccumulator();
+            if (!state->physicsConfigured)
+            {
+                state->physicsConfigured = true;
+                state->physicsRunning = true;
+            }
+            state->physicsAccumulator = 0.0;
             state->physicsTime = std::chrono::steady_clock::now();
 
             if (state->renderer.drawFrame())
@@ -342,12 +393,27 @@ namespace
         const auto now = std::chrono::steady_clock::now();
         const auto workStartTime = now;
 
-        if (state->physicsTime != std::chrono::steady_clock::time_point{})
-            state->physics.advance(std::chrono::duration<double>(now - state->physicsTime).count());
-        state->physicsTime = now;
-        if (!state->renderer.setFallingCubeY(static_cast<float>(state->physics.y())))
+        if (state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
         {
-            logError("ATLAS: не удалось обновить положение куба.");
+            constexpr double fixedStep = 1.0 / 60.0;
+            const double elapsed = std::chrono::duration<double>(now - state->physicsTime).count();
+            state->physicsAccumulator = std::min(state->physicsAccumulator + std::max(elapsed, 0.0), 0.25);
+            while (state->physicsAccumulator + 1e-12 >= fixedStep)
+            {
+                if (!atlas::physics::step(state->platform, state->boxes, 1.0f / 60.0f))
+                {
+                    logError("ATLAS: ошибка шага физики; симуляция остановлена.");
+                    state->physicsRunning = false;
+                    state->physicsAccumulator = 0.0;
+                    break;
+                }
+                state->physicsAccumulator -= fixedStep;
+            }
+        }
+        state->physicsTime = now;
+        if (!syncPhysicsScene(state))
+        {
+            logError("ATLAS: не удалось обновить положения кубов.");
             state->renderer.shutdown();
             return;
         }
@@ -642,7 +708,7 @@ namespace
                 break;
 
             case APP_CMD_RESUME:
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 state->isActive = true;
                 state->lastFrameTime = std::chrono::steady_clock::now();
@@ -651,7 +717,7 @@ namespace
                 break;
 
             case APP_CMD_GAINED_FOCUS:
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 state->hasFocus = true;
                 state->lastFrameTime = std::chrono::steady_clock::now();
@@ -669,7 +735,7 @@ namespace
                 break;
 
             case APP_CMD_LOST_FOCUS:
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 state->hasFocus = false;
                 state->touchActive = false;
@@ -707,14 +773,14 @@ namespace
                 break;
 
             case APP_CMD_PAUSE:
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 state->isActive = false;
                 logInfo("ATLAS: приложение приостановлено.");
                 break;
 
             case APP_CMD_TERM_WINDOW:
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 logInfo("ATLAS: окно закрывается, освобождаем Vulkan.");
                 state->renderer.shutdown();
@@ -722,7 +788,7 @@ namespace
 
             case APP_CMD_STOP:
                 state->isActive = false;
-                state->physics.resetAccumulator();
+                state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
                 logInfo("ATLAS: приложение остановлено.");
                 break;
