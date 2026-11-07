@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace
@@ -1390,39 +1391,78 @@ bool VulkanRenderer::createVertexBuffer(
     AAssetManager* assetManager
 )
 {
+    // Ограничение для текущего прототипа.
+    // Это не предел будущей системы потоковой загрузки.
+    constexpr size_t MAX_TOTAL_VERTICES = 1000000;
+
     std::vector<Vertex> vertices;
-    std::vector<Vertex> cubeVertices;
+    std::vector<MeshRange> ranges;
 
-    if (!atlas::loadMesh(
-            assetManager,
-            "models/pyramid.atlasmesh",
-            vertices
-        ))
+    for (const atlas::SceneObject& object : sceneObjects_)
     {
-        return false;
+        bool alreadyLoaded = false;
+
+        for (const MeshRange& range : ranges)
+        {
+            if (range.name == object.meshName)
+            {
+                alreadyLoaded = true;
+                break;
+            }
+        }
+
+        if (alreadyLoaded)
+        {
+            continue;
+        }
+
+        const std::string path =
+            "models/" + object.meshName + ".atlasmesh";
+
+        std::vector<Vertex> modelVertices;
+
+        if (!atlas::loadMesh(
+                assetManager,
+                path.c_str(),
+                modelVertices
+            ))
+        {
+            return false;
+        }
+
+        if (modelVertices.size() > MAX_TOTAL_VERTICES - vertices.size())
+        {
+            __android_log_print(
+                ANDROID_LOG_ERROR,
+                LOG_TAG,
+                "Vulkan: превышен общий лимит вершин сцены."
+            );
+            return false;
+        }
+
+        MeshRange range{};
+        range.name = object.meshName;
+        range.firstVertex = static_cast<uint32_t>(vertices.size());
+        range.vertexCount = static_cast<uint32_t>(modelVertices.size());
+
+        vertices.insert(
+            vertices.end(),
+            modelVertices.begin(),
+            modelVertices.end()
+        );
+
+        ranges.push_back(range);
     }
 
-    if (!atlas::loadMesh(
-            assetManager,
-            "models/cube.atlasmesh",
-            cubeVertices
-        ))
+    if (vertices.empty())
     {
+        __android_log_print(
+            ANDROID_LOG_ERROR,
+            LOG_TAG,
+            "Vulkan: в сцене нет вершин для загрузки."
+        );
         return false;
     }
-
-    // Сначала в общем буфере идёт пирамида, затем куб.
-    const uint32_t pyramidCount =
-        static_cast<uint32_t>(vertices.size());
-
-    const uint32_t cubeCount =
-        static_cast<uint32_t>(cubeVertices.size());
-
-    vertices.insert(
-        vertices.end(),
-        cubeVertices.begin(),
-        cubeVertices.end()
-    );
 
     const VkDeviceSize bufferSize =
         static_cast<VkDeviceSize>(vertices.size() * sizeof(Vertex));
@@ -1550,9 +1590,15 @@ bool VulkanRenderer::createVertexBuffer(
     );
 
     vkUnmapMemory(device_, vertexBufferMemory_);
-    pyramidVertexCount_ = pyramidCount;
-    cubeFirstVertex_ = pyramidCount;
-    cubeVertexCount_ = cubeCount;
+    meshRanges_ = std::move(ranges);
+
+    __android_log_print(
+        ANDROID_LOG_INFO,
+        LOG_TAG,
+        "Vulkan: уникальных моделей: %u, всего вершин: %u",
+        static_cast<unsigned>(meshRanges_.size()),
+        static_cast<unsigned>(vertices.size())
+    );
 
     logInfo("Vulkan: буфер вершин создан и заполнен.");
     return true;
@@ -1711,27 +1757,34 @@ bool VulkanRenderer::recordCommandBuffers(
                 &mvp
             );
 
-            uint32_t firstVertex = 0;
-            uint32_t vertexCount = 0;
+            const MeshRange* selectedMesh = nullptr;
 
-            switch (object.mesh)
+            for (const MeshRange& range : meshRanges_)
             {
-                case atlas::MeshType::Pyramid:
-                    firstVertex = 0;
-                    vertexCount = pyramidVertexCount_;
+                if (range.name == object.meshName)
+                {
+                    selectedMesh = &range;
                     break;
+                }
+            }
 
-                case atlas::MeshType::Cube:
-                    firstVertex = cubeFirstVertex_;
-                    vertexCount = cubeVertexCount_;
-                    break;
+            if (selectedMesh == nullptr)
+            {
+                __android_log_print(
+                    ANDROID_LOG_ERROR,
+                    LOG_TAG,
+                    "Vulkan: модель объекта не найдена: %s",
+                    object.meshName.c_str()
+                );
+
+                return false;
             }
 
             vkCmdDraw(
                 commandBuffers_[i],
-                vertexCount,
+                selectedMesh->vertexCount,
                 1,
-                firstVertex,
+                selectedMesh->firstVertex,
                 0
             );
         }
@@ -1913,9 +1966,7 @@ void VulkanRenderer::shutdown()
     initialized_ = false;
     swapchainOutOfDate_ = false;
     sceneObjects_.clear();
-    pyramidVertexCount_ = 0;
-    cubeFirstVertex_ = 0;
-    cubeVertexCount_ = 0;
+    meshRanges_.clear();
 
     if (device_ != VK_NULL_HANDLE)
     {
