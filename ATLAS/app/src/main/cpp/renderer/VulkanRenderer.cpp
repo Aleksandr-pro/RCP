@@ -1170,7 +1170,7 @@ bool VulkanRenderer::createGraphicsPipeline(
     binding.stride = sizeof(Vertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attributes[3]{};
+    VkVertexInputAttributeDescription attributes[4]{};
 
     // location = 0: позиция из трёх чисел float.
     attributes[0].location = 0;
@@ -1190,12 +1190,18 @@ bool VulkanRenderer::createGraphicsPipeline(
     attributes[2].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributes[2].offset = offsetof(Vertex, normal);
 
+    // location = 3: UV-координаты.
+    attributes[3].location = 3;
+    attributes[3].binding = 0;
+    attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[3].offset = offsetof(Vertex, uv);
+
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = 3;
+    vertexInput.vertexAttributeDescriptionCount = 4;
     vertexInput.pVertexAttributeDescriptions = attributes;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};

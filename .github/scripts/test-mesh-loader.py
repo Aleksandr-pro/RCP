@@ -46,6 +46,13 @@ void checkNormals(const std::vector<Vertex>& vertices) {
         }
         assert(std::abs(length - 1.0f) < 1e-5f);
         assert(outward > 0.0f); // Origin lies inside both models.
+        const float ax = std::abs(a.normal[0]), ay = std::abs(a.normal[1]), az = std::abs(a.normal[2]);
+        for (size_t j = 0; j < 3; ++j) {
+            const Vertex& v = vertices[i+j];
+            const float expectedU = (ax >= ay && ax >= az) ? v.position[2] + 0.5f : v.position[0] + 0.5f;
+            const float expectedV = (ax < ay && ay >= az) ? v.position[2] + 0.5f : v.position[1] + 0.5f;
+            assert(std::abs(v.uv[0] - expectedU) < 1e-6f && std::abs(v.uv[1] - expectedV) < 1e-6f);
+        }
     }
 }
 int main() {

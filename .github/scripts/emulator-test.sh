@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.23/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.24/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-023-reference.png
+adb exec-out screencap -p > atlas-024-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -90,21 +90,37 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-023-reference.png').convert('RGB')
+before = Image.open('atlas-024-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
-# Isolate the saturated model pixels, excluding the FPS panel and system bars.
-def scene_mask(image):
-    pixels = image.load()
-    return {(x, y): pixels[x, y] for y in range(h // 8, 7 * h // 8)
-            for x in range(w // 10, 9 * w // 10)
-            if max(pixels[x, y]) >= 100 and max(pixels[x, y]) - min(pixels[x, y]) >= 45}
-a, b = scene_mask(before), scene_mask(after)
-assert len(a) > 500 and len(b) > 500, (len(a), len(b))
-delta = sum(a.get(p) != b.get(p) for p in a.keys() | b.keys())
-print(f'0.23 vs 0.24: {delta} changed colored pixels out of {w*h}')
-assert delta > 100, 'Lighting did not visibly change the scene'
+# Compare identical geometry and lighting with the 0.24 unpatterned scene.
+# Dark checker cells reduce the same surface color while light cells retain it.
+unchanged = darker = unexpected_brighter = transitions = 0
+for y in range(h // 5, 4 * h // 5):
+    previous = None
+    for x in range(w // 5, 4 * w // 5):
+        old = before.getpixel((x, y))
+        new = after.getpixel((x, y))
+        if max(old) < 70 or max(old) - min(old) < 30:
+            previous = None
+            continue
+        difference = sum(old) - sum(new)
+        state = None
+        if abs(difference) <= 6:
+            unchanged += 1
+            state = 'light'
+        elif difference > 30:
+            darker += 1
+            state = 'dark'
+        elif difference < -30:
+            unexpected_brighter += 1
+        if state and previous and state != previous:
+            transitions += 1
+        previous = state
+print(f'Checker vs 0.24: light={unchanged}, dark={darker}, transitions={transitions}, brighter={unexpected_brighter}')
+assert unchanged > 200 and darker > 200 and transitions > 50, 'Expected alternating light and dark checker cells'
+assert unexpected_brighter < (unchanged + darker) * 0.05, 'Checker unexpectedly brightened the surface'
 PYCOMPARE
 then
   cat scene-compare.log
