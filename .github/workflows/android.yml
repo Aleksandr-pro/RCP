@@ -265,8 +265,8 @@ jobs:
             scene-compare.log
             model-compare.log
             light-compare.log
-            atlas-light-normal.png
-            atlas-light-reversed.png
+            atlas-light-normal*.png
+            atlas-light-reversed*.png
             atlas-cube-test.png
             atlas-model-baseline.png
             atlas-cube-test-log.txt

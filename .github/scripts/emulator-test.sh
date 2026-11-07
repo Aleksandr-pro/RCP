@@ -323,31 +323,41 @@ adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 adb exec-out screencap -p > atlas-light-normal.png
+adb shell input swipe 60 350 220 350 700
+sleep 2
+adb exec-out screencap -p > atlas-light-normal-opposite.png
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/atlas-reversed-light.apk"
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 adb exec-out screencap -p > atlas-light-reversed.png
+adb shell input swipe 60 350 220 350 700
+sleep 2
+adb exec-out screencap -p > atlas-light-reversed-opposite.png
 if ! python3 - > light-compare.log 2>&1 <<'PYLIGHT'
 from PIL import Image
-normal = Image.open('atlas-light-normal.png').convert('RGB')
-reverse = Image.open('atlas-light-reversed.png').convert('RGB')
-assert normal.size == reverse.size
-w, h = normal.size
 brightened = darkened = 0
-for y in range(h // 8, 7 * h // 8):
-    for x in range(w // 10, 9 * w // 10):
-        a, b = normal.getpixel((x, y)), reverse.getpixel((x, y))
-        if max(a) - min(a) < 20 and max(b) - min(b) < 20:
-            continue
-        difference = sum(b) - sum(a)
-        if difference > 40:
-            brightened += 1
-        if difference < -40:
-            darkened += 1
-print(f'Reversed light: {brightened} pixels brighter, {darkened} darker')
-assert brightened > 100 and darkened > 100, 'Opposite light did not swap illuminated and shaded faces'
+for suffix in ('', '-opposite'):
+    normal = Image.open(f'atlas-light-normal{suffix}.png').convert('RGB')
+    reverse = Image.open(f'atlas-light-reversed{suffix}.png').convert('RGB')
+    assert normal.size == reverse.size
+    w, h = normal.size
+    view_brightened = view_darkened = 0
+    for y in range(h // 8, 7 * h // 8):
+        for x in range(w // 10, 9 * w // 10):
+            a, b = normal.getpixel((x, y)), reverse.getpixel((x, y))
+            if max(a) - min(a) < 20 and max(b) - min(b) < 20:
+                continue
+            difference = sum(b) - sum(a)
+            if difference > 40:
+                view_brightened += 1
+            if difference < -40:
+                view_darkened += 1
+    print(f'View {suffix or "initial"}: {view_brightened} pixels brighter, {view_darkened} darker')
+    brightened += view_brightened
+    darkened += view_darkened
+assert brightened > 100 and darkened > 100, 'Opposite light did not swap illuminated and shaded faces across views'
 PYLIGHT
 then
   detail=$(cat light-compare.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
