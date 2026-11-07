@@ -58,7 +58,7 @@ for a,b in zip(samples, samples[1:]):
     assert b[0] <= a[0] + 1e-5, (a,b)
 projection = [tuple(map(float,x)) for x in re.findall(r'y=([-0-9.]+) screenY=([-0-9.]+)', '\n'.join(line for line in text.splitlines() if 'ATLAS_PROJ_TEST' in line))]
 assert any(a[0]-b[0] > .15 and b[1] > a[1] for a in projection for b in projection if b[0] < a[0]), 'Falling Y must move down on screen'
-focus = re.findall(r'(lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
+focus = re.findall(r'ATLAS_PHYS_TEST: (lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
 for first, second in zip(focus, focus[1:]):
     if first[0] == 'lost' and second[0] == 'gain':
         assert float(first[1]) > rest + 0.01 and float(first[2]) < 0, f'Pause did not occur during fall: {first}'
