@@ -79,9 +79,12 @@ for pair in sand wood; do
   adb shell am force-stop "$package"
   adb install -r "$RUNNER_TEMP/physics-$pair.apk"
   adb logcat -c
+  stdbuf -o0 adb logcat -v brief -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log" &
+  logger=$!
   adb shell am start -n "$package/.AtlasActivity"
   sleep 6
-  adb logcat -d -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log"
+  kill "$logger" || true
+  wait "$logger" || true
 done
 python3 - <<'PYMATERIAL' 2> physics-diagnostics/material-error.txt || { cat physics-diagnostics/material-error.txt; echo "::error::$(tail -n 4 physics-diagnostics/material-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
