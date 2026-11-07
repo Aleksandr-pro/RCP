@@ -56,13 +56,13 @@ PYIMAGE
   return 1
 }
 # Install the previous release first to verify a real in-place upgrade.
-adb install -r reference-0.20/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r reference-0.21/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 [ "$(adb shell pidof "$package" | tr -d '\r' | wc -w)" -ge 1 ]
 adb logcat -d -s ATLAS:I '*:S' | grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18'
-adb exec-out screencap -p > atlas-020-reference.png
+adb exec-out screencap -p > atlas-021-reference.png
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
@@ -75,6 +75,7 @@ grep -q 'ATLAS 0.4b: запуск C++ ядра' atlas-log.txt
 adb logcat -d -s ATLAS_TEST:I '*:S' > atlas-initial-trace.txt
 grep -q 'update angle=' atlas-initial-trace.txt
 grep -q 'scene draw count=9 pattern=121212121 invalid=0' atlas-initial-trace.txt
+grep -q 'Сцена загружена: scenes/test.atlasscene, объектов: 9' atlas-log.txt
 grep -q 'Модель загружена: models/pyramid.atlasmesh, вершин: 18' atlas-log.txt
 grep -q 'Модель загружена: models/cube.atlasmesh, вершин: 36' atlas-log.txt
 grep -q 'Vulkan: рендерер готов' atlas-log.txt
@@ -88,7 +89,7 @@ grep -q 'Vulkan: currentTransform=' atlas-log.txt
 check_screen portrait
 if ! python3 - > scene-compare.log 2>&1 <<'PYCOMPARE'
 from PIL import Image
-before = Image.open('atlas-020-reference.png').convert('RGB')
+before = Image.open('atlas-021-reference.png').convert('RGB')
 after = Image.open('portrait.png').convert('RGB')
 assert before.size == after.size, (before.size, after.size)
 w, h = before.size
@@ -100,23 +101,9 @@ def scene_mask(image):
             if max(pixels[x, y]) >= 100 and max(pixels[x, y]) - min(pixels[x, y]) >= 45}
 a, b = scene_mask(before), scene_mask(after)
 assert len(a) > 500 and len(b) > 500, (len(a), len(b))
-# The reference contains a regular 3x3 grid of pyramids. Divide its bounding
-# box into nine cells. Each cube cell must visibly change. Cubes may
-# project across cell boundaries and overlap a neighboring pyramid, so other
-# cells can change too; the trace independently verifies all draw ranges.
-x0, x1 = min(x for x, y in a), max(x for x, y in a)
-y0, y1 = min(y for x, y in a), max(y for x, y in a)
-deltas = [[0] * 3 for _ in range(3)]
-for x, y in a.keys() | b.keys():
-    if a.get((x, y)) != b.get((x, y)):
-        col = max(0, min(2, (x - x0) * 3 // (x1 - x0 + 1)))
-        row = max(0, min(2, (y - y0) * 3 // (y1 - y0 + 1)))
-        deltas[row][col] += 1
-print(f'0.20 vs 0.21 changed colored pixels by scene cell: {deltas}')
-for row in range(3):
-    for col in range(3):
-        if (row + col) % 2:
-            assert deltas[row][col] > 25, (row, col, deltas)
+delta = sum(a.get(p) != b.get(p) for p in a.keys() | b.keys())
+print(f'0.21 vs 0.22: {delta} changed colored pixels out of {w*h}')
+assert delta < w * h * 0.001, 'Rendered scene differs from ATLAS 0.21'
 PYCOMPARE
 then
   cat scene-compare.log
@@ -279,5 +266,55 @@ if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-errors.txt; t
   summary=$(tail -n 30 atlas-errors.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=ATLAS error log::$summary"
   echo '::error::ATLAS reported error-level messages during the emulator test'
+  exit 1
+fi
+
+# A separate emulator-only APK changes only the central scene-file scale.
+# The production APK and the checked-in scene stay at 0.42.
+adb logcat -c
+adb shell settings put system user_rotation 0
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb logcat -d -s ATLAS_TEST_SCENE:I '*:S' > atlas-scale-baseline-log.txt
+grep -q 'center scale=0.42' atlas-scale-baseline-log.txt
+adb exec-out screencap -p > atlas-scale-baseline.png
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/atlas-scene-large.apk"
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+adb logcat -d -s ATLAS:I ATLAS_TEST_SCENE:I '*:S' > atlas-scale-large-log.txt
+grep -q 'Сцена загружена: scenes/test.atlasscene, объектов: 9' atlas-scale-large-log.txt
+grep -q 'center scale=0.60' atlas-scale-large-log.txt
+adb exec-out screencap -p > atlas-scene-large.png
+if ! python3 - > scene-scale-check.log 2>&1 <<'PYSCALE'
+from PIL import Image
+before = Image.open('atlas-scale-baseline.png').convert('RGB')
+after = Image.open('atlas-scene-large.png').convert('RGB')
+assert before.size == after.size
+w, h = before.size
+# Focus on the center of the portrait scene, ignoring FPS and system bars.
+box = (w // 2 - w // 8, h // 2 - w // 8,
+       w // 2 + w // 8, h // 2 + w // 8)
+a, b = before.crop(box), after.crop(box)
+def colored(p):
+    return max(p) >= 100 and max(p) - min(p) >= 45
+before_pixels, after_pixels = list(a.getdata()), list(b.getdata())
+counts = (sum(map(colored, before_pixels)), sum(map(colored, after_pixels)))
+changed = sum(x != y for x, y in zip(before_pixels, after_pixels))
+print(f'Center crop: colored pixels {counts[0]} -> {counts[1]}, changed {changed}')
+assert changed > 100, 'Increasing scene-file scale did not visibly affect the center'
+assert counts[1] > counts[0] + 50, 'The central figure did not become larger'
+PYSCALE
+then
+  detail=$(cat scene-scale-check.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+  echo "::error title=Scene scale test::$detail"
+  exit 1
+fi
+cat scene-scale-check.log
+adb logcat -d -s ATLAS:E '*:S' > atlas-scale-errors.txt
+if grep -Eq '(^|[[:space:]])E[[:space:]]+ATLAS[[:space:]]*:' atlas-scale-errors.txt; then
+  echo '::error::ATLAS reported an error while testing the larger scene object'
+  cat atlas-scale-errors.txt
   exit 1
 fi

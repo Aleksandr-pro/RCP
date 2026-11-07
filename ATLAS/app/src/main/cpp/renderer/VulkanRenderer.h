@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../scene/TestScene.h"
+
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
 
@@ -63,6 +65,8 @@ private:
         float cameraDistance
     );
     bool createSyncObjects();
+
+    std::vector<atlas::SceneObject> sceneObjects_;
 
     VkInstance instance_ = VK_NULL_HANDLE;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;

@@ -24,6 +24,7 @@ add_library(
     main.cpp
     renderer/VulkanRenderer.cpp
     scene/MeshLoader.cpp
+    scene/SceneLoader.cpp
 )
 
 target_compile_features(

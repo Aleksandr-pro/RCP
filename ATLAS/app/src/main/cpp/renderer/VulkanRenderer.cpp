@@ -1,6 +1,7 @@
 #include "VulkanRenderer.h"
 #include "../scene/TestScene.h"
 #include "../scene/MeshLoader.h"
+#include "../scene/SceneLoader.h"
 
 #include <android/log.h>
 
@@ -253,7 +254,12 @@ bool VulkanRenderer::initialize(
         return false;
     }
 
-    if (!createInstance() ||
+    if (!atlas::loadScene(
+            assetManager,
+            "scenes/test.atlasscene",
+            sceneObjects_
+        ) ||
+        !createInstance() ||
         !createSurface(window) ||
         !selectPhysicalDevice() ||
         !createDevice() ||
@@ -1675,7 +1681,7 @@ bool VulkanRenderer::recordCommandBuffers(
         );
         const Matrix4 projection = perspective(aspect);
 
-        for (const atlas::SceneObject& object : atlas::TEST_SCENE)
+        for (const atlas::SceneObject& object : sceneObjects_)
         {
             // Собственный поворот объекта не зависит от камеры.
             const Matrix4 rotation = rotationY(object.rotationOffset);
@@ -1906,6 +1912,7 @@ void VulkanRenderer::shutdown()
 {
     initialized_ = false;
     swapchainOutOfDate_ = false;
+    sceneObjects_.clear();
     pyramidVertexCount_ = 0;
     cubeFirstVertex_ = 0;
     cubeVertexCount_ = 0;
