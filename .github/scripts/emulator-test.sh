@@ -170,6 +170,9 @@ adb logcat -d -s ATLAS:I '*:S' > atlas-pre-background-log.txt
 adb logcat -d -s ATLAS_LAYOUT_TEST:I '*:S' > atlas-layout-lifecycle-log.txt
 grep -q 'pipeline layout destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'descriptor layout destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'descriptor pool destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture sampler destroyed' atlas-layout-lifecycle-log.txt
+grep -q 'texture view destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'texture image destroyed' atlas-layout-lifecycle-log.txt
 grep -q 'texture memory freed' atlas-layout-lifecycle-log.txt
 grep 'ATLAS stats: FPS=' atlas-pre-background-log.txt > atlas-stats.txt
@@ -430,6 +433,9 @@ needles = ('Vulkan: descriptor layout текстуры создан.',
            'inject pipeline failure',
            'Vulkan: инициализация не завершена.',
            'pipeline layout destroyed',
+           'descriptor pool destroyed',
+           'texture sampler destroyed',
+           'texture view destroyed',
            'texture image destroyed',
            'texture memory freed',
            'descriptor layout destroyed')

@@ -188,6 +188,13 @@ jobs:
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
           text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
+          for needle, event in (
+              ('            vkDestroyDescriptorPool(device_, textureDescriptorPool_, nullptr);', 'descriptor pool destroyed'),
+              ('            vkDestroySampler(device_, textureSampler_, nullptr);', 'texture sampler destroyed'),
+              ('            vkDestroyImageView(device_, textureImageView_, nullptr);', 'texture view destroyed'),
+          ):
+              assert text.count(needle) == 1
+              text = text.replace(needle, needle + f'\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "{event}");')
           needle = '            vkDestroyImage(device_, textureImage_, nullptr);'
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "texture image destroyed");')
