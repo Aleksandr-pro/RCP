@@ -219,6 +219,28 @@ namespace atlas
                 vertices[i + j].normal[0] = normal[0];
                 vertices[i + j].normal[1] = normal[1];
                 vertices[i + j].normal[2] = normal[2];
+
+                // Тестовая плоская проекция по доминирующей оси нормали.
+                // Подходит для наших моделей размером примерно 1×1×1.
+                const float ax = std::abs(normal[0]);
+                const float ay = std::abs(normal[1]);
+                const float az = std::abs(normal[2]);
+
+                if (ax >= ay && ax >= az)
+                {
+                    vertices[i + j].uv[0] = vertices[i + j].position[2] + 0.5f;
+                    vertices[i + j].uv[1] = vertices[i + j].position[1] + 0.5f;
+                }
+                else if (ay >= az)
+                {
+                    vertices[i + j].uv[0] = vertices[i + j].position[0] + 0.5f;
+                    vertices[i + j].uv[1] = vertices[i + j].position[2] + 0.5f;
+                }
+                else
+                {
+                    vertices[i + j].uv[0] = vertices[i + j].position[0] + 0.5f;
+                    vertices[i + j].uv[1] = vertices[i + j].position[1] + 0.5f;
+                }
             }
         }
 

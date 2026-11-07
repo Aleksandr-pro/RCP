@@ -60,7 +60,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.24-debug
+          name: ATLAS-0.25a-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with a third model
@@ -81,7 +81,7 @@ jobs:
       - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.24-test-cube-test
+          name: ATLAS-0.25a-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with reversed light
@@ -94,7 +94,7 @@ jobs:
       - name: Upload reversed-light test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.24-test-reversed-light
+          name: ATLAS-0.25a-test-reversed-light
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -133,11 +133,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.23 for update testing
+      - name: Check out ATLAS 0.24 for update testing
         uses: actions/checkout@v4
         with:
-          ref: c303e8bf6704e6c69f6def91c4e40935db269e09
-          path: reference-0.23
+          ref: 36a5231df512a2898f91ae98d4fd2f8a3fddc94a
+          path: reference-0.24
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -145,8 +145,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.23 emulator APK
-        working-directory: reference-0.23/ATLAS
+      - name: Build ATLAS 0.24 emulator APK
+        working-directory: reference-0.24/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -261,7 +261,7 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
-            atlas-023-reference.png
+            atlas-024-reference.png
             scene-compare.log
             model-compare.log
             light-compare.log
