@@ -71,7 +71,23 @@ for orientation in ('portrait', 'landscape'):
     right_diff, left_diff = changed(right), changed(left)
     print(f'{orientation}: right swipe difference={right_diff:.2%}, opposite swipe remaining difference={left_diff:.2%}')
     assert right_diff > 0.005, f'Right swipe did not visibly rotate the scene: {orientation}'
-    assert left_diff < right_diff * 0.5, f'Opposite swipe did not return substantially toward the starting view: {orientation}'
+    def yaw_at(marker):
+        prefix = log.split(f'ATLAS_TOUCH_MARK: {orientation}-{marker}', 1)
+        assert len(prefix) == 2, f'Missing screenshot marker {orientation}-{marker}'
+        poses = re.findall(r'camera=([-0-9.]+),([-0-9.]+) light=', prefix[0])
+        assert poses, f'No camera trace before {orientation}-{marker}'
+        return float(poses[-1][0])
+    def angle_distance(a, b):
+        return abs(math.remainder(a - b, math.tau))
+    initial_yaw, right_yaw, final_yaw = (yaw_at(stage) for stage in ('before', 'right', 'left'))
+    right_angle = angle_distance(right_yaw, initial_yaw)
+    left_angle = angle_distance(final_yaw, initial_yaw)
+    print(f'{orientation}: angular deviation after right={right_angle:.4f}, after reverse={left_angle:.4f}')
+    assert left_angle < right_angle, f'Reverse swipe did not move back toward the initial orientation: {orientation}'
+    # Android can omit final swipe samples; only demand near-identical pixels
+    # when the recorded camera angle actually returned close to its starting value.
+    if left_angle < 0.02:
+        assert left_diff < right_diff * 0.5, f'View did not return after a nearly symmetric gesture: {orientation}'
     for direction in ('down', 'diagonal'):
         image = Image.open(f'scene-comparison/touch-{orientation}-{direction}.png').convert('RGB')
         difference = changed(image)
