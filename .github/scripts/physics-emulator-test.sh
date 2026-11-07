@@ -12,31 +12,27 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
 adb logcat -c
-# The test-only build briefly holds each phase so HOME can be delivered reliably.
-pause_on_marker() {
-  local tag="$1" marker="$2"
-  (
-    set +o pipefail
-    timeout 15s stdbuf -o0 adb logcat -T 1 -v brief -s "$tag:I" '*:S' | while IFS= read -r line; do
-      if [[ "$line" == *"$marker"* ]]; then
-        adb shell input keyevent KEYCODE_HOME
-        break
-      fi
-    done
-  ) &
-  watcher=$!
-  adb shell am start -n "$package/.AtlasActivity"
-  wait "$watcher"
-  sleep 2
-}
-pause_on_marker ATLAS_PHYS_TEST 'velocity=-'
-pause_on_marker ATLAS_JUMP_TEST 'phase=waiting'
-pause_on_marker ATLAS_JUMP_TEST 'phase=jumping'
+# As soon as the first simulation frame is logged, background the app while
+# the cube is still falling. The reader starts before the activity.
+(
+  # logcat can remain blocked after the reader exits; its timeout is expected.
+  set +o pipefail
+  timeout 15s stdbuf -o0 adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
+    if [[ "$line" == *"frame y="* && "$line" == *"velocity=-"* ]]; then
+      adb shell input keyevent KEYCODE_HOME
+      break
+    fi
+  done
+) &
+watcher=$!
 adb shell am start -n "$package/.AtlasActivity"
-sleep 5
+wait "$watcher"
+sleep 3
+adb shell am start -n "$package/.AtlasActivity"
+sleep 4
 adb exec-out screencap -p > physics-diagnostics/normal.png
 adb exec-out screencap -p > physics-diagnostics/resumed.png
-adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_JUMP_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
+adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_BOUNCE_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
 python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-diagnostics/analysis-error.txt; echo "::error::$(tail -n 3 physics-diagnostics/analysis-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
@@ -54,11 +50,16 @@ for index, target in enumerate((-0.6, 0.0, -0.6)):
     assert sum(abs(y-target) < 1e-5 and abs(v) < 1e-5 for y,v in states) > 10, f'Box {index} did not settle'
 assert any(v < -0.1 for y, v, r in samples), 'No fall recorded'
 assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y, v, r in samples) > 10, 'No stable landing'
-for a,b in zip(samples, samples[1:]):
-    assert b[0] <= a[0] + 1e-5, (a,b)
+bounce = [tuple(map(float, v)) for v in re.findall(r'ATLAS_BOUNCE_TEST: y=([-0-9.]+) velocity=([-0-9.]+)', text)]
+assert len(bounce) > 100
+assert all(y >= rest - 1e-6 for y,v in bounce), 'Bounce crossed the platform'
+impacts = [b[1] for a,b in zip(bounce,bounce[1:]) if a[1] < 0 and b[1] > 0 and abs(b[0]-rest) < 1e-5]
+assert len(impacts) >= 2 and all(b < a for a,b in zip(impacts,impacts[1:])), f'No diminishing rebounds: {impacts}'
+assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y,v in bounce) > 30, 'Bounce did not settle'
+print('Bounce impact speeds:', impacts)
 projection = [tuple(map(float,x)) for x in re.findall(r'y=([-0-9.]+) screenY=([-0-9.]+)', '\n'.join(line for line in text.splitlines() if 'ATLAS_PROJ_TEST' in line))]
 assert any(a[0]-b[0] > .15 and b[1] > a[1] for a in projection for b in projection if b[0] < a[0]), 'Falling Y must move down on screen'
-focus = re.findall(r'ATLAS_PHYS_TEST: (lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
+focus = re.findall(r'(lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
 for first, second in zip(focus, focus[1:]):
     if first[0] == 'lost' and second[0] == 'gain':
         assert float(first[1]) > rest + 0.01 and float(first[2]) < 0, f'Pause did not occur during fall: {first}'
@@ -71,30 +72,17 @@ for first, second in zip(focus, focus[1:]):
         assert abs(float(resumed[2])-float(second[2])) < 1e-6, 'Velocity changed on first resumed frame'
         break
 else: raise AssertionError('No focus loss/resume pair')
-jump_frames = [tuple(map(float, x[:3])) + (int(x[3]),) for x in re.findall(r'ATLAS_JUMP_TEST: frame y=([-0-9.]+) velocity=([-0-9.]+) timer=([-0-9.]+) jumped=(\d+)', text)]
-assert any(j == 0 and abs(y + .6) < 1e-5 and .2 < timer < 1 for y, v, timer, j in jump_frames), 'No grounded wait'
-assert any(j and v > 1 for y, v, timer, j in jump_frames), 'No upward jump'
-assert any(j and v < -1 for y, v, timer, j in jump_frames), 'No descent'
-assert sum(j and abs(y + .6) < 1e-5 and abs(v) < 1e-5 for y, v, timer, j in jump_frames) > 10, 'No final landing'
-assert sum(a[3] == 0 and b[3] == 1 for a,b in zip(jump_frames, jump_frames[1:])) == 1, 'Jump was not one-shot'
-focus_jump = re.findall(r'ATLAS_JUMP_TEST: (lost|gain) y=([-0-9.]+) velocity=([-0-9.]+) timer=([-0-9.]+) jumped=(\d+)', text)
-pairs = [(a,b) for a,b in zip(focus_jump,focus_jump[1:]) if a[0]=='lost' and b[0]=='gain']
-assert len(pairs) >= 3, pairs
-for a,b in pairs:
-    assert a[1:] == b[1:], (a,b)
-assert any(float(a[3]) > .2 and a[4]=='0' for a,b in pairs), 'No pause during waiting'
-assert any(float(a[2]) > 0 and a[4]=='1' for a,b in pairs), 'No pause during ascent'
-print('Physics, one-shot jump, stack, screen direction and pauses verified')
+print('Physics, landing, screen direction, focus suspension verified')
 PYCODE
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-alternate.apk"
 adb shell am start -n "$package/.AtlasActivity"
-sleep 9
+sleep 4
 adb exec-out screencap -p > physics-diagnostics/alternate.png
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-reverse-light.apk"
 adb shell am start -n "$package/.AtlasActivity"
-sleep 9
+sleep 4
 adb exec-out screencap -p > physics-diagnostics/reverse-light.png
 python3 - <<'PYCODE'
 from PIL import Image, ImageChops

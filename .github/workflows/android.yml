@@ -20,8 +20,8 @@ jobs:
           python3 .github/scripts/test-texture-loader.py
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-physics
           /tmp/test-physics
-          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-jump.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-jump
-          /tmp/test-jump
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-bounce.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-bounce
+          /tmp/test-bounce
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"

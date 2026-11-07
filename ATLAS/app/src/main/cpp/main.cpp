@@ -11,13 +11,11 @@
 
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
-#include "physics/JumpTest.h"
+#include "physics/SurfaceBounce.h"
 
 namespace
 {
     constexpr const char* LOG_TAG = "ATLAS";
-    // The third explicitly defined body is the isolated jump test cube.
-    constexpr size_t JUMP_BOX_INDEX = 2;
 
     struct EngineState
     {
@@ -25,11 +23,13 @@ namespace
         atlas::physics::Platform platform{0.0f, -1.0f, 0.0f, 2.0f, 0.1f, 1.0f};
         std::vector<atlas::physics::Box> boxes{
             {-0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
-            {-0.6f, 1.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
-            { 0.7f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f}
+            {-0.6f, 1.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f}
         };
         const std::vector<atlas::physics::Box> initialBoxes = boxes;
-        atlas::physics::JumpTest jumpTest{};
+        atlas::physics::Box bouncingBox{0.7f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f};
+        const atlas::physics::Box initialBouncingBox = bouncingBox;
+        atlas::physics::ContactMaterial contact{};
+        size_t bouncingObjectIndex = 0;
         std::vector<size_t> boxObjectIndices;
         bool physicsConfigured = false;
         bool physicsRunning = false;
@@ -88,16 +88,16 @@ namespace
         );
     }
 
-    bool isolatedJumpBox(const std::vector<atlas::physics::Box>& boxes)
+    bool validBouncingBox(const EngineState& state)
     {
-        if (JUMP_BOX_INDEX >= boxes.size()) return false;
-        const auto& jump = boxes[JUMP_BOX_INDEX];
-        for (size_t i = 0; i < boxes.size(); ++i)
+        const auto& box = state.bouncingBox;
+        const auto& p = state.platform;
+        // validate checks finite dimensions, initial height and X/Z overlap.
+        if (!atlas::physics::validate(p, std::vector<atlas::physics::Box>{box})) return false;
+        for (const auto& other : state.boxes)
         {
-            if (i == JUMP_BOX_INDEX) continue;
-            const auto& other = boxes[i];
-            if (std::abs(jump.x - other.x) < jump.halfX + other.halfX &&
-                std::abs(jump.z - other.z) < jump.halfZ + other.halfZ)
+            if (std::abs(box.x - other.x) < box.halfX + other.halfX &&
+                std::abs(box.z - other.z) < box.halfZ + other.halfZ)
                 return false;
         }
         return true;
@@ -106,7 +106,7 @@ namespace
     bool bindPhysicsScene(EngineState* state)
     {
         const auto& objects = state->renderer.sceneObjects();
-        if (objects.size() != state->initialBoxes.size() + 1) return false;
+        if (objects.size() != state->initialBoxes.size() + 2) return false;
         std::vector<bool> used(objects.size(), false);
         auto findObject = [&](float x, float y, float z, float sx, float sy, float sz) -> size_t
         {
@@ -130,7 +130,10 @@ namespace
             if (i == objects.size()) return false;
             state->boxObjectIndices.push_back(i);
         }
-        return true;
+        const auto& bounce = state->initialBouncingBox;
+        state->bouncingObjectIndex = findObject(bounce.x, bounce.y, bounce.z,
+                                                2*bounce.halfX, 2*bounce.halfY, 2*bounce.halfZ);
+        return state->bouncingObjectIndex != objects.size();
     }
 
     bool syncPhysicsScene(EngineState* state)
@@ -138,7 +141,7 @@ namespace
         if (state->boxes.size() != state->boxObjectIndices.size()) return false;
         for (size_t i = 0; i < state->boxes.size(); ++i)
             if (!state->renderer.setObjectY(state->boxObjectIndices[i], state->boxes[i].y)) return false;
-        return true;
+        return state->renderer.setObjectY(state->bouncingObjectIndex, state->bouncingBox.y);
     }
 
     // Для версии 0.3 при изменении окна пересоздаём весь рендерер.
@@ -176,7 +179,7 @@ namespace
                 return false;
             }
 
-            if ((!state->physicsConfigured && (!atlas::physics::validate(state->platform, state->boxes) || !isolatedJumpBox(state->boxes))) ||
+            if ((!state->physicsConfigured && (!atlas::physics::validate(state->platform, state->boxes) || !validBouncingBox(*state))) ||
                 !bindPhysicsScene(state) || !syncPhysicsScene(state) ||
                 !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
             {
@@ -186,7 +189,6 @@ namespace
             }
             if (!state->physicsConfigured)
             {
-                state->jumpTest = {};
                 state->physicsConfigured = true;
                 state->physicsRunning = true;
             }
@@ -420,17 +422,17 @@ namespace
             state->physicsAccumulator = std::min(state->physicsAccumulator + std::max(elapsed, 0.0), 0.25);
             while (state->physicsAccumulator + 1e-12 >= fixedStep)
             {
-                if (!atlas::physics::updateJumpTest(state->jumpTest, state->platform,
-                                                   state->boxes, JUMP_BOX_INDEX, 1.0f / 60.0f))
+                if (!atlas::physics::step(state->platform, state->boxes, 1.0f / 60.0f))
                 {
-                    logError("ATLAS: ошибка теста прыжка; симуляция остановлена.");
+                    logError("ATLAS: ошибка шага физики; симуляция остановлена.");
                     state->physicsRunning = false;
                     state->physicsAccumulator = 0.0;
                     break;
                 }
-                if (!atlas::physics::step(state->platform, state->boxes, 1.0f / 60.0f))
+                if (!atlas::physics::stepBouncingBox(state->platform, state->bouncingBox,
+                                                      state->contact, 1.0f / 60.0f))
                 {
-                    logError("ATLAS: ошибка шага физики; симуляция остановлена.");
+                    logError("ATLAS: ошибка отскока; симуляция остановлена.");
                     state->physicsRunning = false;
                     state->physicsAccumulator = 0.0;
                     break;
