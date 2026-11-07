@@ -2,6 +2,7 @@
 #include "../scene/TestScene.h"
 #include "../scene/MeshLoader.h"
 #include "../scene/SceneLoader.h"
+#include "../scene/TextureLoader.h"
 
 #include <android/log.h>
 
@@ -271,6 +272,19 @@ bool VulkanRenderer::initialize(
             LOG_TAG,
             "Vulkan: AssetManager отсутствует."
         );
+        return false;
+    }
+
+    // Проверяем загрузку файла перед созданием Vulkan-ресурсов.
+    // В 0.25b данные ещё не передаются в GPU.
+    std::vector<uint8_t> testTexture;
+
+    if (!atlas::loadTestTexture(
+            assetManager,
+            "textures/checker.rgba",
+            testTexture
+        ))
+    {
         return false;
     }
 

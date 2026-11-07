@@ -28,6 +28,8 @@ jobs:
         run: python3 .github/scripts/test-mesh-loader.py
       - name: Test scene loading and validation
         run: python3 .github/scripts/test-scene-loader.py
+      - name: Test texture loading and validation
+        run: python3 .github/scripts/test-texture-loader.py
       - name: Compile shaders
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -56,11 +58,18 @@ jobs:
               asset = 'assets/scenes/test.atlasscene'
               with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
                   assert apk.read(asset) == expected.read(), asset
+              asset = 'assets/textures/checker.rgba'
+              with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
+                  texture = apk.read(asset)
+                  assert texture == expected.read(), asset
+                  assert len(texture) == 256 and sum(texture) == 47520
+                  assert texture == bytes(v for y in range(8) for x in range(8)
+                                          for v in ((255, 255, 255, 255) if (x+y)%2 == 0 else (70, 70, 70, 255)))
           PYCODE
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-debug
+          name: ATLAS-0.25b-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with a third model
@@ -81,7 +90,7 @@ jobs:
       - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-test-cube-test
+          name: ATLAS-0.25b-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with reversed light
@@ -94,7 +103,7 @@ jobs:
       - name: Upload reversed-light test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-test-reversed-light
+          name: ATLAS-0.25b-test-reversed-light
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -133,11 +142,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.24 for update testing
+      - name: Check out ATLAS 0.25a for update testing
         uses: actions/checkout@v4
         with:
-          ref: 36a5231df512a2898f91ae98d4fd2f8a3fddc94a
-          path: reference-0.24
+          ref: efaa98677f3fa6428f779252cb1aadd5f1ee3367
+          path: reference-0.25a
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -145,8 +154,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.24 emulator APK
-        working-directory: reference-0.24/ATLAS
+      - name: Build ATLAS 0.25a emulator APK
+        working-directory: reference-0.25a/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -224,6 +233,21 @@ jobs:
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-reversed-light.apk"
           cp "$RUNNER_TEMP/renderer-traced.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
           (cd ATLAS && ./gradlew assembleDebug)
+      - name: Build invalid-texture emulator APK
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/assets/textures/checker.rgba')
+          data = path.read_bytes()
+          assert len(data) == 256
+          path.write_bytes(data[:-1])
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-invalid-texture.apk"
+          git checkout -- ATLAS/app/src/main/assets/textures/checker.rgba
+          (cd ATLAS && ./gradlew assembleDebug)
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -261,8 +285,9 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
-            atlas-024-reference.png
+            atlas-025a-reference.png
             scene-compare.log
+            atlas-invalid-texture-log.txt
             model-compare.log
             light-compare.log
             atlas-light-normal*.png
