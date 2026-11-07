@@ -1,0 +1,25 @@
+name: Compile ATLAS 0.25a shaders
+on:
+  push:
+    branches: [arena/5a946e2c-rcp]
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile shaders with Android NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;26.1.10909125' > /dev/null
+          for stage in vert frag; do
+            "$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc" "ATLAS/app/src/main/shaders/triangle.$stage" -o "$RUNNER_TEMP/triangle.$stage.spv"
+          done
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          for stage in ('vert', 'frag'):
+              data = base64.b64encode((Path(os.environ['RUNNER_TEMP']) / f'triangle.{stage}.spv').read_bytes()).decode()
+              for i in range(0, len(data), 1500):
+                  print(f'::notice title=shader-{stage}-{i // 1500}::{data[i:i+1500]}')
+          PY
