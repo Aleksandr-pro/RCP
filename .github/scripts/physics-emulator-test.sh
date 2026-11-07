@@ -11,13 +11,23 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
 adb logcat -c
+# As soon as the first simulation frame is logged, background the app while
+# the cube is still falling. The reader starts before the activity.
+(
+  timeout 30s adb logcat -v brief -s ATLAS_PHYS_TEST:I '*:S' | while IFS= read -r line; do
+    if [[ "$line" == *"frame y="* ]]; then
+      adb shell input keyevent KEYCODE_HOME
+      break
+    fi
+  done
+) &
+watcher=$!
+adb shell am start -n "$package/.AtlasActivity"
+wait "$watcher"
+sleep 3
 adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 adb exec-out screencap -p > physics-diagnostics/normal.png
-adb shell input keyevent KEYCODE_HOME
-sleep 4
-adb shell am start -n "$package/.AtlasActivity"
-sleep 3
 adb exec-out screencap -p > physics-diagnostics/resumed.png
 adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
 python3 - <<'PYCODE'
@@ -40,6 +50,7 @@ assert any(a[0]-b[0] > .15 and b[1] > a[1] for a in projection for b in projecti
 focus = re.findall(r'(lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)
 for first, second in zip(focus, focus[1:]):
     if first[0] == 'lost' and second[0] == 'gain':
+        assert float(first[1]) > rest + 0.01 and float(first[2]) < 0, f'Pause did not occur during fall: {first}'
         assert abs(float(first[1])-float(second[1])) < 1e-6 and abs(float(first[2])-float(second[2])) < 1e-6
         break
 else: raise AssertionError('No focus loss/resume pair')
