@@ -122,6 +122,18 @@ then
   cat scene-compare.log
   detail=$(cat scene-compare.log | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=Scene comparison::$detail"
+  python3 - <<'PYIMAGES'
+from PIL import Image
+import base64, io
+for name in ('atlas-020-reference.png', 'portrait.png'):
+    image = Image.open(name).convert('RGB')
+    image.thumbnail((160, 320))
+    output = io.BytesIO()
+    image.save(output, format='PNG', optimize=True)
+    data = base64.b64encode(output.getvalue()).decode()
+    for i in range(0, len(data), 1500):
+        print(f'::notice title={name}-{i // 1500}::{data[i:i+1500]}')
+PYIMAGES
   exit 1
 fi
 cat scene-compare.log
