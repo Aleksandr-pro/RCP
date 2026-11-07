@@ -28,6 +28,8 @@ jobs:
         run: python3 .github/scripts/test-mesh-loader.py
       - name: Test scene loading and validation
         run: python3 .github/scripts/test-scene-loader.py
+      - name: Test texture loading and validation
+        run: python3 .github/scripts/test-texture-loader.py
       - name: Compile shaders
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -56,11 +58,18 @@ jobs:
               asset = 'assets/scenes/test.atlasscene'
               with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
                   assert apk.read(asset) == expected.read(), asset
+              asset = 'assets/textures/checker.rgba'
+              with open(f'ATLAS/app/src/main/{asset}', 'rb') as expected:
+                  texture = apk.read(asset)
+                  assert texture == expected.read(), asset
+                  assert len(texture) == 256 and sum(texture) == 47520
+                  assert texture == bytes(v for y in range(8) for x in range(8)
+                                          for v in ((255, 255, 255, 255) if (x+y)%2 == 0 else (70, 70, 70, 255)))
           PYCODE
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-debug
+          name: ATLAS-0.25c-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with a third model
@@ -81,7 +90,7 @@ jobs:
       - name: Upload third-model test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-test-cube-test
+          name: ATLAS-0.25c-test-cube-test
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
       - name: Build test APK with reversed light
@@ -94,7 +103,7 @@ jobs:
       - name: Upload reversed-light test APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.25a-test-reversed-light
+          name: ATLAS-0.25c-test-reversed-light
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -133,11 +142,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out ATLAS 0.24 for update testing
+      - name: Check out ATLAS 0.25b for update testing
         uses: actions/checkout@v4
         with:
-          ref: 36a5231df512a2898f91ae98d4fd2f8a3fddc94a
-          path: reference-0.24
+          ref: 24fa9781c9b85c04732da194483d6fef29c29ee6
+          path: reference-0.25b
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -145,8 +154,8 @@ jobs:
       - name: Install build components
         run: >-
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-34' 'ndk;26.1.10909125' 'cmake;3.22.1'
-      - name: Build ATLAS 0.24 emulator APK
-        working-directory: reference-0.24/ATLAS
+      - name: Build ATLAS 0.25b emulator APK
+        working-directory: reference-0.25b/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -178,6 +187,12 @@ jobs:
           needle = '        vkCmdEndRenderPass(commandBuffers_[i]);'
           assert text.count(needle) == 1
           text = text.replace(needle, '        static bool testDrawCountLogged = false;\n        if (!testDrawCountLogged) { __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "scene draw count=%u pattern=%u invalid=%u", testDrawCount, testPattern, testInvalid); testDrawCountLogged = true; }\n' + needle)
+          needle = '            vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);'
+          assert text.count(needle) == 1
+          text = text.replace(needle, needle + '\n            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "pipeline layout destroyed");')
+          needle = '            textureDescriptorLayout_ = VK_NULL_HANDLE;'
+          assert text.count(needle) == 1
+          text = text.replace(needle, '            __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "descriptor layout destroyed");\n' + needle)
           needle = 'bool VulkanRenderer::drawFrame()\n{\n'
           assert text.count(needle) == 1
           text = text.replace(needle, needle + '    __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEST", "draw");\n')
@@ -224,6 +239,39 @@ jobs:
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-reversed-light.apk"
           cp "$RUNNER_TEMP/renderer-traced.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
           (cd ATLAS && ./gradlew assembleDebug)
+      - name: Build invalid-texture emulator APK
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/assets/textures/checker.rgba')
+          data = path.read_bytes()
+          assert len(data) == 256
+          path.write_bytes(data[:-1])
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-invalid-texture.apk"
+          git checkout -- ATLAS/app/src/main/assets/textures/checker.rgba
+          (cd ATLAS && ./gradlew assembleDebug)
+      - name: Build pipeline-failure emulator APK
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          cp ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp "$RUNNER_TEMP/renderer-failure-backup.cpp"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          path = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
+          text = path.read_text()
+          needle = '        !createGraphicsPipeline(assetManager) ||\n        !createImageViews() ||'
+          assert text.count(needle) == 1
+          text = text.replace(needle, '        !createGraphicsPipeline(assetManager) ||\n        ([]() { __android_log_print(ANDROID_LOG_INFO, "ATLAS_LAYOUT_TEST", "inject pipeline failure"); return true; }()) ||\n        !createImageViews() ||')
+          path.write_text(text)
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/atlas-layout-failure.apk"
+          cp "$RUNNER_TEMP/renderer-failure-backup.cpp" ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp
+          (cd ATLAS && ./gradlew assembleDebug)
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -261,8 +309,11 @@ jobs:
             atlas-system-log.txt
             atlas-screen.png
             portrait.png
-            atlas-024-reference.png
+            atlas-025b-reference.png
             scene-compare.log
+            atlas-invalid-texture-log.txt
+            atlas-layout-failure-log.txt
+            atlas-layout-lifecycle-log.txt
             model-compare.log
             light-compare.log
             atlas-light-normal*.png

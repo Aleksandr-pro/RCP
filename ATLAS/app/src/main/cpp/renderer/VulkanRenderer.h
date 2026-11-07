@@ -49,6 +49,7 @@ private:
     bool createSwapchain();
     bool createDepthResources();
     bool createRenderPass();
+    bool createTextureDescriptorLayout();
     bool createGraphicsPipeline(AAssetManager* assetManager);
 
     bool loadShaderModule(
@@ -104,6 +105,7 @@ private:
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout textureDescriptorLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;

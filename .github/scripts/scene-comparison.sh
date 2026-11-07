@@ -39,14 +39,17 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 6
 wait_orientation portrait
 adb exec-out screencap -p > scene-comparison/touch-portrait-before.png
+adb shell log -p i -t ATLAS_TOUCH_MARK portrait-before
 adb shell input swipe 60 350 220 350 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-right.png
+adb shell log -p i -t ATLAS_TOUCH_MARK portrait-right
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-still.png
 adb shell input swipe 220 350 60 350 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-left.png
+adb shell log -p i -t ATLAS_TOUCH_MARK portrait-left
 adb shell input swipe 160 220 160 420 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-portrait-down.png
@@ -61,7 +64,7 @@ sleep 2
 adb shell input swipe 160 80 160 560 700
 adb shell input swipe 160 80 160 560 700
 sleep 2
-adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I '*:S' > scene-comparison/touch-log.txt
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I ATLAS_TOUCH_MARK:I '*:S' > scene-comparison/touch-log.txt
 adb logcat -c
 # Start a fresh landscape activity, so this gesture check is independent of
 # the preceding portrait swipe. Rotation during an active app is tested above.
@@ -73,14 +76,17 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 8
 wait_orientation landscape
 adb exec-out screencap -p > scene-comparison/touch-landscape-before.png
+adb shell log -p i -t ATLAS_TOUCH_MARK landscape-before
 adb shell input swipe 140 180 460 180 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-right.png
+adb shell log -p i -t ATLAS_TOUCH_MARK landscape-right
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-still.png
 adb shell input swipe 460 180 140 180 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-left.png
+adb shell log -p i -t ATLAS_TOUCH_MARK landscape-left
 adb shell input swipe 320 80 320 240 700
 sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-down.png
@@ -91,7 +97,7 @@ sleep 2
 adb exec-out screencap -p > scene-comparison/touch-landscape-diagonal.png
 adb shell input swipe 440 240 160 80 700
 sleep 2
-adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I '*:S' >> scene-comparison/touch-log.txt
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I ATLAS_TOUCH_MARK:I '*:S' >> scene-comparison/touch-log.txt
 adb logcat -c
 # Leave a finger down while the app loses focus, then resume and swipe again.
 adb shell input swipe 120 180 480 180 3000 &
@@ -104,7 +110,7 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 5
 adb shell input swipe 140 180 460 180 700
 sleep 2
-adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I '*:S' >> scene-comparison/touch-log.txt
+adb logcat -d -s ATLAS:I ATLAS_TOUCH_TEST:I ATLAS_LIGHT_TEST:I ATLAS_TOUCH_MARK:I '*:S' >> scene-comparison/touch-log.txt
 if ! python3 .github/scripts/check-touch.py > scene-comparison/touch-check.txt 2>&1; then
   detail=$(cat scene-comparison/touch-check.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
   echo "::error title=Touch test::$detail"
