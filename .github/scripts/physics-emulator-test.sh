@@ -79,9 +79,10 @@ for pair in sand wood; do
   adb shell am force-stop "$package"
   adb install -r "$RUNNER_TEMP/physics-$pair.apk"
   adb logcat -c
-  stdbuf -o0 adb logcat -v brief -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log" &
+  stdbuf -o0 adb logcat -v threadtime -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log" &
   logger=$!
   adb shell am start -n "$package/.AtlasActivity"
+  adb shell pidof "$package" | tr -d '\r' > "physics-diagnostics/material-$pair.pid"
   sleep 6
   kill "$logger" || true
   wait "$logger" || true
@@ -92,6 +93,11 @@ import re
 
 def first_peak(path):
     text = Path(path).read_text()
+    pid_path = Path(path).with_suffix('.pid')
+    if pid_path.exists():
+        pid = pid_path.read_text().strip()
+        assert pid.isdigit(), f'No application process: {pid!r}'
+        text = '\n'.join(line for line in text.splitlines() if re.search(rf'\s{pid}\s+\d+\s+I\s+ATLAS_BOUNCE_TEST:', line))
     data = [tuple(map(float,v)) for v in re.findall(r'ATLAS_BOUNCE_TEST: y=([-0-9.]+) velocity=([-0-9.]+)', text)]
     assert len(data) > 60, f'No simulation trace in {path}'
     assert abs(data[0][0] - .4) < .05, f'Unexpected initial height in {path}: {data[0]}'
