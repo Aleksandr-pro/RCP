@@ -38,6 +38,8 @@ public:
     // Освобождает все Vulkan-ресурсы.
     void shutdown();
 
+    const std::vector<atlas::SceneObject>& sceneObjects() const { return sceneObjects_; }
+    bool setFallingCubeY(float y);
     bool isInitialized() const;
     bool isSwapchainOutOfDate() const;
 
