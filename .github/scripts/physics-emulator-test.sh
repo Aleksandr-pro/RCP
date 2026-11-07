@@ -82,7 +82,13 @@ for pair in sand wood; do
   stdbuf -o0 adb logcat -v threadtime -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log" &
   logger=$!
   adb shell am start -n "$package/.AtlasActivity"
-  adb shell pidof "$package" | tr -d '\r' > "physics-diagnostics/material-$pair.pid"
+  for attempt in $(seq 1 30); do
+    pid=$(adb shell pidof "$package" | tr -d '\r' || true)
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then break; fi
+    sleep .2
+  done
+  [[ "$pid" =~ ^[0-9]+$ ]]
+  printf '%s\n' "$pid" > "physics-diagnostics/material-$pair.pid"
   sleep 6
   kill "$logger" || true
   wait "$logger" || true
