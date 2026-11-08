@@ -12,10 +12,13 @@
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
 #include "physics/SurfaceBounce.h"
+#include "physics/ContactMaterials.h"
 
 namespace
 {
     constexpr const char* LOG_TAG = "ATLAS";
+    constexpr auto bodyMaterial = atlas::physics::BodyMaterial::TestRubber;
+    constexpr auto surfaceMaterial = atlas::physics::SurfaceMaterial::Stone;
 
     struct EngineState
     {
@@ -189,6 +192,12 @@ namespace
             }
             if (!state->physicsConfigured)
             {
+                if (!atlas::physics::getContactMaterial(bodyMaterial, surfaceMaterial, state->contact))
+                {
+                    logError("ATLAS: неизвестная пара материалов; симуляция не запущена.");
+                    state->renderer.shutdown();
+                    return false;
+                }
                 state->physicsConfigured = true;
                 state->physicsRunning = true;
             }

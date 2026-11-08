@@ -6,8 +6,8 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.26b.
-adb install -r reference-0.26b/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26c.
+adb install -r reference-0.26c/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
@@ -74,6 +74,54 @@ for first, second in zip(focus, focus[1:]):
 else: raise AssertionError('No focus loss/resume pair')
 print('Physics, landing, screen direction, focus suspension verified')
 PYCODE
+# Separate test-only builds use the same scene and initial height, changing only the pair.
+for pair in sand wood; do
+  adb shell am force-stop "$package"
+  adb install -r "$RUNNER_TEMP/physics-$pair.apk"
+  adb logcat -c
+  stdbuf -o0 adb logcat -v threadtime -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/material-$pair.log" &
+  logger=$!
+  adb shell am start -n "$package/.AtlasActivity"
+  for attempt in $(seq 1 30); do
+    pid=$(adb shell pidof "$package" | tr -d '\r' || true)
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then break; fi
+    sleep .2
+  done
+  [[ "$pid" =~ ^[0-9]+$ ]]
+  printf '%s\n' "$pid" > "physics-diagnostics/material-$pair.pid"
+  sleep 6
+  kill "$logger" || true
+  wait "$logger" || true
+done
+python3 - <<'PYMATERIAL' 2> physics-diagnostics/material-error.txt || { cat physics-diagnostics/material-error.txt; for f in physics-diagnostics/material-*.log; do echo "::notice title=$f::$(head -n 12 "$f" | tr '\n' '|')"; done; echo "::error::$(tail -n 4 physics-diagnostics/material-error.txt | tr '\n' ' ')"; exit 1; }
+from pathlib import Path
+import re
+
+def first_peak(path):
+    text = Path(path).read_text()
+    pid_path = Path(path).with_suffix('.pid')
+    if pid_path.exists():
+        pid = pid_path.read_text().strip()
+        assert pid.isdigit(), f'No application process: {pid!r}'
+        text = '\n'.join(line for line in text.splitlines() if re.search(rf'\s{pid}\s+\d+\s+I\s+ATLAS_BOUNCE_TEST:', line))
+    data = [tuple(map(float,v)) for v in re.findall(r'ATLAS_BOUNCE_TEST: y=([-0-9.]+) velocity=([-0-9.]+)', text)]
+    assert len(data) > 60, f'No simulation trace in {path}'
+    assert abs(data[0][0] - .4) < .05, f'Unexpected initial height in {path}: {data[0]}'
+    floor = -.6
+    impact = next((i for i in range(1,len(data)) if data[i-1][1] < 0 and data[i][1] > 0 and abs(data[i][0]-floor)<1e-5), None)
+    assert impact is not None, f'No bounce in {path}'
+    end = next((i for i in range(impact+1,len(data)) if data[i][1] <= 0), len(data))
+    peak = max(y for y,v in data[impact:end]) - floor
+    assert all(y >= floor-1e-5 for y,v in data)
+    assert sum(abs(y-floor)<1e-5 and abs(v)<1e-5 for y,v in data)>10, f'No rest in {path}'
+    return peak
+stone=first_peak('physics-diagnostics/physics.log')
+sand=first_peak('physics-diagnostics/material-sand.log')
+wood=first_peak('physics-diagnostics/material-wood.log')
+print(f'First rebound: rubber/stone={stone}, rubber/sand={sand}, wood/stone={wood}')
+assert stone > sand and stone > wood
+PYMATERIAL
+
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-alternate.apk"
 adb shell am start -n "$package/.AtlasActivity"

@@ -22,6 +22,8 @@ jobs:
           /tmp/test-physics
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-bounce.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-bounce
           /tmp/test-bounce
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-materials.cpp -o /tmp/test-materials
+          /tmp/test-materials
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -43,7 +45,7 @@ jobs:
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.26c-debug
+          name: ATLAS-0.26d-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:
@@ -83,8 +85,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 5ca6408917e751e0f0909832a324435e184c30b4
-          path: reference-0.26b
+          ref: ce5d7352cf53cac99fa6dac834549092933ac16c
+          path: reference-0.26c
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -92,7 +94,7 @@ jobs:
       - name: Install Android SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
       - name: Build previous APK
-        working-directory: reference-0.26b/ATLAS
+        working-directory: reference-0.26c/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug
@@ -103,6 +105,22 @@ jobs:
           python3 .github/scripts/instrument-physics-test.py
           (cd ATLAS && ./gradlew assembleDebug)
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/physics-normal.apk"
+          cp ATLAS/app/src/main/cpp/main.cpp "$RUNNER_TEMP/material-main.cpp"
+          for pair in sand wood; do
+            cp "$RUNNER_TEMP/material-main.cpp" ATLAS/app/src/main/cpp/main.cpp
+            python3 - "$pair" <<'PYCODE'
+          from pathlib import Path
+          import sys
+          p = Path('ATLAS/app/src/main/cpp/main.cpp')
+          s = p.read_text()
+          old, new = (('SurfaceMaterial::Stone', 'SurfaceMaterial::Sand') if sys.argv[1] == 'sand' else ('BodyMaterial::TestRubber', 'BodyMaterial::TestWood'))
+          assert s.count(old) == 1
+          p.write_text(s.replace(old, new))
+          PYCODE
+            (cd ATLAS && ./gradlew assembleDebug)
+            cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/physics-$pair.apk"
+          done
+          cp "$RUNNER_TEMP/material-main.cpp" ATLAS/app/src/main/cpp/main.cpp
           python3 - <<'PYCODE'
           from pathlib import Path
           path = Path('ATLAS/app/src/main/assets/textures/ornament.rgba')
