@@ -9,7 +9,7 @@
 namespace atlas
 {
     bool loadMaterialConfig(AAssetManager* manager, const char* path,
-                            physics::ContactMaterial& contact)
+                            physics::ContactMaterial& contact, float& friction)
     {
         constexpr const char* tag = "ATLAS";
         constexpr off_t maxBytes = 256;
@@ -71,7 +71,14 @@ namespace atlas
             __android_log_print(ANDROID_LOG_ERROR, tag, "Материалы: неподдерживаемая пара '%s' и '%s' в %s.", bodyName.c_str(), surfaceName.c_str(), path);
             return false;
         }
+        float parsedFriction = 0.0f;
+        if (!physics::getSlidingFriction(body, surface, parsedFriction))
+        {
+            __android_log_print(ANDROID_LOG_ERROR, tag, "Материалы: трение недоступно для '%s' и '%s'.", bodyName.c_str(), surfaceName.c_str());
+            return false;
+        }
         contact = parsed;
+        friction = parsedFriction;
         __android_log_print(ANDROID_LOG_INFO, tag, "Материалы загружены: %s %s, restitution=%.2f, restSpeed=%.2f.", bodyName.c_str(), surfaceName.c_str(), contact.restitution, contact.restSpeed);
         return true;
     }

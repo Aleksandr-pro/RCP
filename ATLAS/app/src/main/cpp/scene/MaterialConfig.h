@@ -7,5 +7,5 @@ namespace atlas
 {
     // On failure, contact remains unchanged.
     bool loadMaterialConfig(AAssetManager* manager, const char* path,
-                            physics::ContactMaterial& contact);
+                            physics::ContactMaterial& contact, float& friction);
 }

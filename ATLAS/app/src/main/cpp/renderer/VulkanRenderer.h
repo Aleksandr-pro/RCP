@@ -40,6 +40,7 @@ public:
 
     const std::vector<atlas::SceneObject>& sceneObjects() const { return sceneObjects_; }
     bool setObjectY(size_t index, float y);
+    bool setObjectPosition(size_t index, float x, float y, float z);
     bool isInitialized() const;
     bool isSwapchainOutOfDate() const;
 

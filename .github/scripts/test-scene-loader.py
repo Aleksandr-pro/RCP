@@ -54,7 +54,7 @@ int main() {
     assert(physicsFile);
     asset.content = std::string((std::istreambuf_iterator<char>(physicsFile)), {});
     assert(loadScene(&asset, "physics", objects) && objects.size() == 4);
-    assert(objects[0].scale == 4.0f && objects[0].scaleY == 0.2f && objects[0].scaleZ == 2.0f);
+    assert(objects[0].scale == 6.0f && objects[0].scaleY == 0.2f && objects[0].scaleZ == 2.0f);
     assert(objects[1].scaleY == 0.6f);
     asset.content = "ATLAS_SCENE_V2\ncube 0 0 0 2 0 2 0\n";
     assert(!loadScene(&asset, "bad v2", objects) && objects.empty());
