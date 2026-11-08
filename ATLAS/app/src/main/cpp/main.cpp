@@ -12,13 +12,11 @@
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
 #include "physics/SurfaceBounce.h"
-#include "physics/ContactMaterials.h"
+#include "scene/MaterialConfig.h"
 
 namespace
 {
     constexpr const char* LOG_TAG = "ATLAS";
-    constexpr auto bodyMaterial = atlas::physics::BodyMaterial::TestRubber;
-    constexpr auto surfaceMaterial = atlas::physics::SurfaceMaterial::Stone;
 
     struct EngineState
     {
@@ -159,6 +157,15 @@ namespace
             return false;
         }
 
+        // Renderer recreation preserves physics; only a new simulation reads the asset.
+        if (!state->physicsConfigured &&
+            !atlas::loadMaterialConfig(app->activity->assetManager,
+                                       "scenes/physics_materials.txt", state->contact))
+        {
+            logError("ATLAS: ошибка конфигурации материалов; симуляция не запущена.");
+            return false;
+        }
+
         // Если окно изменилось во время создания swapchain,
         // разрешаем одну повторную попытку.
         constexpr int maxAttempts = 2;
@@ -192,12 +199,6 @@ namespace
             }
             if (!state->physicsConfigured)
             {
-                if (!atlas::physics::getContactMaterial(bodyMaterial, surfaceMaterial, state->contact))
-                {
-                    logError("ATLAS: неизвестная пара материалов; симуляция не запущена.");
-                    state->renderer.shutdown();
-                    return false;
-                }
                 state->physicsConfigured = true;
                 state->physicsRunning = true;
             }

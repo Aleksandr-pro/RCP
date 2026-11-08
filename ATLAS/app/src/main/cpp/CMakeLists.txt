@@ -24,6 +24,7 @@ add_library(
     main.cpp
     renderer/VulkanRenderer.cpp
     physics/VerticalPhysics.cpp
+    scene/MaterialConfig.cpp
     scene/MeshLoader.cpp
     scene/SceneLoader.cpp
     scene/TextureLoader.cpp
