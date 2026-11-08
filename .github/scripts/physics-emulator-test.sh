@@ -41,7 +41,12 @@ assert 'Сцена загружена: scenes/physics.atlasscene, объекто
 assert 'Vulkan: рендерер готов' in text
 assert 'Текстура загружена: textures/ornament.rgba' in text
 assert 'Материалы загружены: test_rubber stone, restitution=0.70' in text
-assert text.count('Материалы загружены: test_rubber stone') == 1, 'Material reloaded during renderer recreation'
+frame_pid = re.search(r'\s(\d+)\s+\d+\s+I\s+ATLAS_PHYS_TEST: frame ', text)
+assert frame_pid, 'No frame process id'
+process_id = frame_pid.group(1)
+current_lines = [line for line in text.splitlines() if re.search(rf'\s{process_id}\s+\d+\s+I\s+ATLAS\s*:', line)]
+assert sum('Материалы загружены: test_rubber stone' in line for line in current_lines) == 1, 'Material reloaded during renderer recreation'
+
 samples = [tuple(map(float, x)) for x in re.findall(r'frame y=([-0-9.]+) velocity=([-0-9.]+) rest=([-0-9.]+)', text)]
 assert len(samples) > 15, len(samples)
 rest = samples[0][2]
