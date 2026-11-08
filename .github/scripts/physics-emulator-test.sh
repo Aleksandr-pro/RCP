@@ -6,8 +6,8 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.26c.
-adb install -r reference-0.26c/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26d.
+adb install -r reference-0.26d/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
@@ -40,6 +40,8 @@ text = Path('physics-diagnostics/physics.log').read_text()
 assert 'Сцена загружена: scenes/physics.atlasscene, объектов: 4' in text
 assert 'Vulkan: рендерер готов' in text
 assert 'Текстура загружена: textures/ornament.rgba' in text
+assert 'Материалы загружены: test_rubber stone, restitution=0.70' in text
+assert text.count('Материалы загружены: test_rubber stone') == 1, 'Material reloaded during renderer recreation'
 samples = [tuple(map(float, x)) for x in re.findall(r'frame y=([-0-9.]+) velocity=([-0-9.]+) rest=([-0-9.]+)', text)]
 assert len(samples) > 15, len(samples)
 rest = samples[0][2]
@@ -99,6 +101,8 @@ import re
 
 def first_peak(path):
     text = Path(path).read_text()
+    pair = 'test_rubber sand' if 'material-sand' in path else ('test_wood stone' if 'material-wood' in path else 'test_rubber stone')
+    assert f'Материалы загружены: {pair}' in text, f'Wrong or missing material pair in {path}'
     pid_path = Path(path).with_suffix('.pid')
     if pid_path.exists():
         pid = pid_path.read_text().strip()
@@ -121,6 +125,22 @@ wood=first_peak('physics-diagnostics/material-wood.log')
 print(f'First rebound: rubber/stone={stone}, rubber/sand={sand}, wood/stone={wood}')
 assert stone > sand and stone > wood
 PYMATERIAL
+
+# A bad or missing material asset must stop before renderer/physics initialization.
+for kind in missing empty large unknown extra; do
+  adb shell am force-stop "$package"
+  adb install -r "$RUNNER_TEMP/physics-invalid-$kind.apk"
+  adb logcat -c
+  adb shell am start -n "$package/.AtlasActivity"
+  sleep 3
+  adb logcat -d -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/invalid-$kind.log"
+  grep -q 'Материалы:' "physics-diagnostics/invalid-$kind.log"
+  grep -q 'ошибка конфигурации материалов; симуляция не запущена' "physics-diagnostics/invalid-$kind.log"
+  if grep -Eq 'Vulkan: рендерер готов|ATLAS_BOUNCE_TEST:' "physics-diagnostics/invalid-$kind.log"; then
+    echo "::error::Invalid material configuration $kind started renderer or physics"
+    exit 1
+  fi
+done
 
 adb shell am force-stop "$package"
 adb install -r "$RUNNER_TEMP/physics-alternate.apk"
