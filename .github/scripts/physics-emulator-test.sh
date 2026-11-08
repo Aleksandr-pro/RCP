@@ -133,13 +133,21 @@ for kind in missing empty large unknown extra; do
   adb logcat -c
   adb shell am start -n "$package/.AtlasActivity"
   sleep 3
-  adb logcat -d -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/invalid-$kind.log"
-  grep -q 'Материалы:' "physics-diagnostics/invalid-$kind.log"
-  grep -q 'ошибка конфигурации материалов; симуляция не запущена' "physics-diagnostics/invalid-$kind.log"
-  if grep -Eq 'Vulkan: рендерер готов|ATLAS_BOUNCE_TEST:' "physics-diagnostics/invalid-$kind.log"; then
-    echo "::error::Invalid material configuration $kind started renderer or physics"
-    exit 1
-  fi
+  pid=$(adb shell pidof "$package" | tr -d '\r')
+  [[ "$pid" =~ ^[0-9]+$ ]]
+  adb logcat -d -s ATLAS:I ATLAS_BOUNCE_TEST:I '*:S' > "physics-diagnostics/invalid-$kind-all.log"
+  python3 - "$kind" "$pid" <<'PYINVALID'
+import re, sys
+from pathlib import Path
+kind, pid = sys.argv[1:]
+source = Path(f'physics-diagnostics/invalid-{kind}-all.log').read_text()
+lines = [line for line in source.splitlines() if re.search(rf'\s{pid}\s+\d+\s+[IEW]\s+(ATLAS|ATLAS_BOUNCE_TEST)\s*:', line)]
+log = '\n'.join(lines)
+Path(f'physics-diagnostics/invalid-{kind}.log').write_text(log)
+assert 'Материалы:' in log, f'{kind}: no material error from process {pid}'
+assert 'ошибка конфигурации материалов; симуляция не запущена' in log
+assert 'Vulkan: рендерер готов' not in log and 'ATLAS_BOUNCE_TEST:' not in log, f'{kind}: renderer or physics started'
+PYINVALID
 done
 
 adb shell am force-stop "$package"
