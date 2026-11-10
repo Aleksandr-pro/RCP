@@ -21,6 +21,8 @@ jobs:
         env:
           ATLAS_TEST_ABI: x86_64
         run: |
+          python3 .github/scripts/fix-comparison-camera.py baseline
+          python3 .github/scripts/fix-comparison-camera.py .
           (cd baseline/ATLAS && ./gradlew assembleDebug)
           cp baseline/ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/baseline.apk"
           (cd ATLAS && ./gradlew assembleDebug)
