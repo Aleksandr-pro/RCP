@@ -87,6 +87,9 @@ b=Image.open('terrain-diagnostics/world-rotated.png')
 print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
+counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) draw calls мира=(\d+)',log)]
+assert len(counts)>=10 and all(0 <= stones <= 144 and draws == stones+2 for stones,draws in counts), counts
+print(f'::notice title=Stone draw calls::per active area stones and total scene draws: {counts}')
 assert 'move_start' in log and 'move_end' in log
 movement=log.split('move_start',1)[1].split('move_end',1)[0]
 assert 'Текстура загружена:' not in movement, 'textures reloaded on chunk transitions'
@@ -172,4 +175,24 @@ for i in (0,1):
     assert creates>0 and creates==destroys, (i,creates,destroys)
 assert not re.search(r'ATLAS_TEXTURE_TEST.*create index=2',s)
 print('::notice title=Texture error cleanup::missing stone texture: previous sand and ground GPU images released')
+PYCODE
+
+# Diagnostic material proves individual stone triangles reach the screen.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/terrain-stone-diagnostic.apk"
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+touch_test switch
+sleep 4
+adb shell input swipe 160 400 160 240 400
+sleep 2
+adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
+sleep 2
+adb exec-out screencap -p > terrain-diagnostics/stone-diagnostic.png
+python3 - <<'PYCODE'
+from PIL import Image
+im=Image.open('terrain-diagnostics/stone-diagnostic.png').convert('RGB')
+pixels=sum(1 for r,g,b in im.getdata() if r>40 and b>40 and g<5 and abs(r-b)<5)
+print(f'::notice title=Stone rasterization::diagnostic magenta pixels={pixels}')
+assert pixels>5, 'no diagnostic stone fragments visible'
 PYCODE

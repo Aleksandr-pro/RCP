@@ -14,8 +14,8 @@ android {
         minSdk 26
         targetSdk 34
 
-        versionCode 47
-        versionName "0.27f"
+        versionCode 48
+        versionName "0.27g"
 
         ndk {
             // Первая сборка только для 64-битных ARM-телефонов.

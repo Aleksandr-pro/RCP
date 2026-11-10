@@ -64,6 +64,14 @@ int main() {
     assert(loadMesh(&asset, "pyramid", vertices) && vertices.size() == 18);
     assert(vertices[0].position[1] == 0.5f && vertices[0].color[1] == 0.80f);
     checkNormals(vertices);
+    std::ifstream stoneFile("ATLAS/app/src/main/assets/models/stone.atlasmesh");
+    assert(stoneFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(stoneFile)), {});
+    assert(loadMesh(&asset, "stone", vertices) && vertices.size() == 78);
+    checkNormals(vertices);
+    float minY=1.0f, maxY=-1.0f;
+    for (auto &v : vertices) { minY=std::min(minY,v.position[1]); maxY=std::max(maxY,v.position[1]); }
+    assert(minY == -0.5f && maxY == 0.5f);
     std::ifstream cubeFile("ATLAS/app/src/main/assets/models/cube.atlasmesh");
     assert(cubeFile);
     asset.content = std::string((std::istreambuf_iterator<char>(cubeFile)), {});
