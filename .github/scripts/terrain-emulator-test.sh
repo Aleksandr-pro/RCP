@@ -53,6 +53,7 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 6
 adb shell log -p i -t ATLAS_TERRAIN_MARK resumed
 adb shell settings put system user_rotation 1
+adb shell cmd window user-rotation lock 1
 for attempt in $(seq 1 15); do
     sleep 2
     adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
@@ -60,6 +61,7 @@ for attempt in $(seq 1 15); do
 done
 python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'
 adb shell settings put system user_rotation 0
+adb shell cmd window user-rotation lock 0
 for attempt in $(seq 1 15); do
     sleep 2
     adb exec-out screencap -p > terrain-diagnostics/world-portrait-again.png
