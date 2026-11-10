@@ -5,6 +5,7 @@
 #include "../scene/TextureLoader.h"
 #include "../world/TerrainMesh.h"
 #include "../world/ActiveStones.h"
+#include "../world/ActiveGrass.h"
 
 #include <android/log.h>
 
@@ -1852,7 +1853,12 @@ bool VulkanRenderer::createVertexBuffer(
             !atlas::world::buildActiveStones(terrainCenter_, stones_)) return false;
         ranges.push_back({"stone", static_cast<uint32_t>(vertices.size()), static_cast<uint32_t>(model.size())});
         vertices.insert(vertices.end(), model.begin(), model.end());
-        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
+        if (!atlas::loadMesh(assetManager, "models/grass.atlasmesh", model) ||
+            model.size() > MAX_TOTAL_VERTICES - vertices.size() ||
+            !atlas::world::buildActiveGrass(terrainCenter_, grass_)) return false;
+        ranges.push_back({"grass", static_cast<uint32_t>(vertices.size()), static_cast<uint32_t>(model.size())});
+        vertices.insert(vertices.end(), model.begin(), model.end());
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u базовых draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
     }
 
     if (vertices.empty())
@@ -2172,6 +2178,7 @@ bool VulkanRenderer::recordCommandBuffers(
             push.lightDirection[3] = 0.0f;
             if (object.meshName == "terrain") push.lightDirection[3] = 1.0f;
             else if (object.meshName == "stone") push.lightDirection[3] = 2.0f;
+            else if (object.meshName == "grass") push.lightDirection[3] = 3.0f;
 
             vkCmdPushConstants(
                 commandBuffers_[i],
@@ -2220,6 +2227,23 @@ bool VulkanRenderer::recordCommandBuffers(
         {
             // Terrain is rebased to the center chunk and transformed by its scene object.
             const auto& terrain = sceneObjects_.front();
+            double cameraX, cameraZ;
+            const double observerX = double(terrainCenter_.x) * atlas::world::CHUNK_SIZE - terrain.x / terrain.scale;
+            const double observerZ = double(terrainCenter_.z) * atlas::world::CHUNK_SIZE - terrain.z / terrain.scaleZ;
+            atlas::world::worldCameraXZ(observerX, observerZ, angleY, angleX, cameraDistance, terrain.scale, cameraX, cameraZ);
+            size_t visibleGrass = 0;
+            for (const auto& grass : grass_)
+            {
+                if (!atlas::world::isGrassVisible(grass, cameraX, cameraZ)) continue;
+                ++visibleGrass;
+                const atlas::SceneObject object{
+                    terrain.x + static_cast<float>(grass.x - double(terrainCenter_.x) * atlas::world::CHUNK_SIZE) * terrain.scale,
+                    terrain.y + static_cast<float>(grass.y) * terrain.scaleY,
+                    terrain.z + static_cast<float>(grass.z - double(terrainCenter_.z) * atlas::world::CHUNK_SIZE) * terrain.scaleZ,
+                    grass.width * terrain.scale, grass.height * terrain.scaleY, grass.width * terrain.scaleZ, grass.rotationY, "grass"};
+                if (!drawObject(object)) return false;
+            }
+            visibleGrassCount_ = visibleGrass;
             for (const auto& stone : stones_)
             {
                 const float scale = stone.scale * terrain.scale;
@@ -2252,8 +2276,9 @@ bool VulkanRenderer::updateTerrain(atlas::world::ChunkCoord center)
     if (center == terrainCenter_) return true;
     std::vector<Vertex> vertices;
     std::vector<atlas::world::StonePlacement> stones;
+    std::vector<atlas::world::GrassPlacement> grass;
     if (!atlas::world::buildTerrain(center, vertices) || vertices.size() != atlas::world::TERRAIN_VERTICES ||
-        !atlas::world::buildActiveStones(center, stones)) return false;
+        !atlas::world::buildActiveStones(center, stones) || !atlas::world::buildActiveGrass(center, grass)) return false;
     // Keep the existing fixed-size buffer and ensure no submitted draw can read it while updating.
     if (!checkResult(vkQueueWaitIdle(queue_), "terrain update wait")) return false;
     void* mapped = nullptr;
@@ -2263,7 +2288,8 @@ bool VulkanRenderer::updateTerrain(atlas::world::ChunkCoord center)
     vkUnmapMemory(device_, vertexBufferMemory_);
     terrainCenter_ = center;
     stones_.swap(stones);
-    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
+    grass_.swap(grass);
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u базовых draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
     return true;
 }
 
@@ -2447,6 +2473,8 @@ void VulkanRenderer::shutdown()
     swapchainOutOfDate_ = false;
     terrainBuffer_ = false;
     stones_.clear();
+    grass_.clear();
+    visibleGrassCount_ = 0;
     sceneObjects_.clear();
     meshRanges_.clear();
 

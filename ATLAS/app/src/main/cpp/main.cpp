@@ -509,6 +509,13 @@ namespace
                 state->maxWorkMs
             );
 
+            if (state->worldScene)
+                __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+                    "ATLAS: трава записей=%u видимых=%u draw calls мира=%u",
+                    static_cast<unsigned>(state->renderer.grassCount()),
+                    static_cast<unsigned>(state->renderer.visibleGrassCount()),
+                    static_cast<unsigned>(state->renderer.worldDrawCalls()));
+
             // Существующую панель не меняем.
             updateFpsOverlay(
                 app,

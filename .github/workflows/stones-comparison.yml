@@ -1,4 +1,4 @@
-name: Stones comparison emulator
+name: Grass comparison emulator
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 917049205d00cc9b086c4afbaa53cbd2948523f9
+          ref: 98068a1a7d7177c1962917d296ea9c0045e5fb5b
           path: baseline
       - uses: actions/setup-java@v5
         with:

@@ -31,6 +31,16 @@ adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
 adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
+sleep 2
+adb exec-out screencap -p > terrain-diagnostics/grass-close.png
+python3 - <<'PYCODE'
+from PIL import Image
+im=Image.open('terrain-diagnostics/grass-close.png').convert('RGB')
+# Production shader output is unlit green; tolerate small color conversion differences.
+pixels=sum(1 for r,g,b in im.getdata() if 29<=r<=33 and 115<=g<=120 and 24<=b<=28)
+print(f'::notice title=Grass rasterization::green grass-colored pixels={pixels}')
+assert pixels>3, 'no visible grass-colored fragments in close view'
+PYCODE
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_end
@@ -87,7 +97,10 @@ b=Image.open('terrain-diagnostics/world-rotated.png')
 print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
-counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) draw calls мира=(\d+)',log)]
+grass=[tuple(map(int,x)) for x in re.findall(r'трава записей=(\d+) видимых=(\d+) draw calls мира=(\d+)',log)]
+assert grass and all(n<=324 and v<=n and d>=v+2 for n,v,d in grass) and any(v>0 for n,v,d in grass), grass
+print(f'::notice title=Grass::records, visible, draw calls: {grass}')
+counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) базовых draw calls мира=(\d+)',log)]
 assert len(counts)>=10 and all(0 <= stones <= 144 and draws == stones+2 for stones,draws in counts), counts
 print(f'::notice title=Stone draw calls::per active area stones and total scene draws: {counts}')
 assert 'move_start' in log and 'move_end' in log
