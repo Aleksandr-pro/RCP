@@ -143,3 +143,24 @@ blue=sum(1 for r,g,b in colors if b>50 and b>r*3 and b>g*3)
 print(f'::notice title=GPU material palette::sand={red} ground={magenta} stone={blue} pixels')
 assert min(red,magenta,blue)>10, 'one or more material textures were not visible'
 PYCODE
+
+# An initialization error after two successful uploads must free both images,
+# including allocations created before any descriptor views exist.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/terrain-missing.apk"
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+adb logcat -d -s ATLAS:E ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/missing.log
+python3 - <<'PYCODE'
+from pathlib import Path
+import re
+s=Path('terrain-diagnostics/missing.log').read_text()
+assert 'Текстура не найдена: textures/stone.rgba' in s
+for i in (0,1):
+    creates=len(re.findall(fr'ATLAS_TEXTURE_TEST.*create index={i}',s))
+    destroys=len(re.findall(fr'ATLAS_TEXTURE_TEST.*destroy index={i}',s))
+    assert creates>0 and creates==destroys, (i,creates,destroys)
+assert not re.search(r'ATLAS_TEXTURE_TEST.*create index=2',s)
+print('::notice title=Texture error cleanup::missing stone texture: previous sand and ground GPU images released')
+PYCODE

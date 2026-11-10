@@ -26,5 +26,5 @@ assert s.count(needle) == 1
 s = s.replace(needle, needle + '\n        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEXTURE_TEST", "create index=%zu", i);')
 needle = '            if (terrainViews_[i]) vkDestroyImageView(device_, terrainViews_[i], nullptr);'
 assert s.count(needle) == 1
-s = s.replace(needle, '            if (terrainViews_[i] && terrainImages_[i] && terrainMemories_[i]) __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEXTURE_TEST", "destroy index=%zu", i);\n' + needle)
+s = s.replace(needle, '            if (terrainImages_[i] && terrainMemories_[i]) __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEXTURE_TEST", "destroy index=%zu", i);\n' + needle)
 p.write_text(s)
