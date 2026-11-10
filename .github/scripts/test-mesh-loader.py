@@ -67,10 +67,15 @@ int main() {
     std::ifstream grassFile("ATLAS/app/src/main/assets/models/grass.atlasmesh");
     assert(grassFile);
     asset.content = std::string((std::istreambuf_iterator<char>(grassFile)), {});
-    assert(loadMesh(&asset, "grass", vertices) && vertices.size() == 12);
+    assert(loadMesh(&asset, "grass", vertices) && vertices.size() == 9);
+    const float expectedGrass[9][3] = {{-.5f,0,0},{.5f,0,0},{.12f,1,0},
+        {-.25f,0,-.433f},{.25f,0,.433f},{.06f,1,.104f},
+        {-.25f,0,.433f},{.25f,0,-.433f},{.06f,1,-.104f}};
+    for (size_t i=0; i<9; ++i) for (int j=0; j<3; ++j)
+        assert(std::abs(vertices[i].position[j]-expectedGrass[i][j]) < 1e-6f);
     for (const auto& v : vertices) {
         assert(v.position[1] >= 0 && v.position[1] <= 1);
-        assert(v.position[0] == 0 || v.position[2] == 0);
+        assert(std::abs(v.normal[1]) < 0.001f); // All leaves are vertical.
     }
     std::ifstream stoneFile("ATLAS/app/src/main/assets/models/stone.atlasmesh");
     assert(stoneFile);

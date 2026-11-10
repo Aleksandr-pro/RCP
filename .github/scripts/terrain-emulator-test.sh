@@ -33,13 +33,19 @@ adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
 sleep 2
 adb exec-out screencap -p > terrain-diagnostics/grass-close.png
+# Half a screen-width is a half-turn. Restore the original view after the screenshot.
+adb shell input swipe $((width/4)) $((height/2)) $((width*3/4)) $((height/2)) 400
+sleep 2
+adb exec-out screencap -p > terrain-diagnostics/grass-reverse.png
+adb shell input swipe $((width*3/4)) $((height/2)) $((width/4)) $((height/2)) 400
 python3 - <<'PYCODE'
 from PIL import Image
-im=Image.open('terrain-diagnostics/grass-close.png').convert('RGB')
-# Production shader output is unlit green; tolerate small color conversion differences.
-pixels=sum(1 for r,g,b in im.getdata() if 29<=r<=33 and 115<=g<=120 and 24<=b<=28)
-print(f'::notice title=Grass rasterization::green grass-colored pixels={pixels}')
-assert pixels>3, 'no visible grass-colored fragments in close view'
+for name in ('grass-close', 'grass-reverse'):
+    im=Image.open('terrain-diagnostics/'+name+'.png').convert('RGB')
+    # Production shader output is an unlit muted green gradient.
+    pixels=sum(1 for r,g,b in im.getdata() if 16<=r<=42 and 58<=g<=103 and 12<=b<=28 and g>r*2.2 and g>b*2.8)
+    print(f'::notice title=Grass {name} rasterization::green grass-colored pixels={pixels}')
+    assert pixels>3, f'no visible grass-colored fragments: {name}'
 PYCODE
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
@@ -53,14 +59,16 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 6
 adb shell log -p i -t ATLAS_TERRAIN_MARK resumed
 adb shell settings put system user_rotation 1
-for attempt in $(seq 1 15); do
+for attempt in $(seq 1 30); do
+    adb shell settings put system user_rotation 1
     sleep 2
     adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
     if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'; then break; fi
 done
 python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'
 adb shell settings put system user_rotation 0
-for attempt in $(seq 1 15); do
+for attempt in $(seq 1 30); do
+    adb shell settings put system user_rotation 0
     sleep 2
     adb exec-out screencap -p > terrain-diagnostics/world-portrait-again.png
     if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'; then break; fi

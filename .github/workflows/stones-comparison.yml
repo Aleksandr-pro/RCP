@@ -9,7 +9,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 98068a1a7d7177c1962917d296ea9c0045e5fb5b
+          ref: b57f0555dec14792b385fa03e964ecf428a52bdb
           path: baseline
       - uses: actions/setup-java@v5
         with:
@@ -21,6 +21,8 @@ jobs:
         env:
           ATLAS_TEST_ABI: x86_64
         run: |
+          python3 .github/scripts/fix-comparison-camera.py baseline
+          python3 .github/scripts/fix-comparison-camera.py .
           (cd baseline/ATLAS && ./gradlew assembleDebug)
           cp baseline/ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/baseline.apk"
           (cd ATLAS && ./gradlew assembleDebug)

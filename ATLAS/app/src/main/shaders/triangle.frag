@@ -33,7 +33,9 @@ void main()
     vec3 surfaceColor;
     if (isTerrain > 2.5)
     {
-        outColor = vec4(0.12, 0.46, 0.10, 1.0);
+        // For the unit-height grass mesh terrainHeight carries local vertex Y.
+        vec3 grassColor = mix(vec3(0.07, 0.24, 0.055), vec3(0.16, 0.39, 0.10), clamp(terrainHeight, 0.0, 1.0));
+        outColor = vec4(grassColor, 1.0);
         return;
     }
     if (isTerrain > 1.5)
