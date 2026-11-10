@@ -3,6 +3,7 @@
 #include "../scene/TestScene.h"
 #include "../world/ChunkGrid.h"
 #include "../world/StonePlacement.h"
+#include "../world/GrassPlacement.h"
 
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
@@ -45,6 +46,9 @@ public:
     bool updateTerrain(atlas::world::ChunkCoord center);
     bool setObjectY(size_t index, float y);
     bool setObjectPosition(size_t index, float x, float y, float z);
+    size_t grassCount() const { return grass_.size(); }
+    size_t visibleGrassCount() const { return visibleGrassCount_; }
+    size_t worldDrawCalls() const { return sceneObjects_.size() + stones_.size() + visibleGrassCount_; }
     bool isInitialized() const;
     bool isSwapchainOutOfDate() const;
 
@@ -89,6 +93,8 @@ private:
     atlas::world::ChunkCoord terrainCenter_{};
     bool terrainBuffer_ = false;
     std::vector<atlas::world::StonePlacement> stones_;
+    std::vector<atlas::world::GrassPlacement> grass_;
+    size_t visibleGrassCount_ = 0;
     std::vector<MeshRange> meshRanges_;
     std::vector<atlas::SceneObject> sceneObjects_;
 

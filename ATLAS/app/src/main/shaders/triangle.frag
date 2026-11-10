@@ -31,6 +31,11 @@ vec3 variedTexture(sampler2D tex, vec2 worldXZ, float variation)
 void main()
 {
     vec3 surfaceColor;
+    if (isTerrain > 2.5)
+    {
+        outColor = vec4(0.12, 0.46, 0.10, 1.0);
+        return;
+    }
     if (isTerrain > 1.5)
         surfaceColor = texture(stoneTexture, vertexUV).rgb;
     else if (isTerrain > 0.5)

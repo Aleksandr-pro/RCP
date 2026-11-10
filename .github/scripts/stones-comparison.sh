@@ -46,7 +46,11 @@ for mode in ('baseline','stones'):
         assert m; return m.group(1)
     print(f'::notice title={mode} memory::PSS before/after={pss("before")}/{pss("after")} kB')
     if mode=='stones':
-        counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) draw calls мира=(\d+)',text)]
+        counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) базовых draw calls мира=(\d+)',text)]
         assert len(counts)>=10 and all(n<=144 and d==n+2 for n,d in counts),counts
-        print(f'::notice title=Stones and draw calls::{counts}')
+        print(f'::notice title=Stones and base draw calls::{counts}')
+        grass=[tuple(map(int,x)) for x in re.findall(r'трава записей=(\d+) видимых=(\d+) draw calls мира=(\d+)',text)]
+        assert grass and all(n<=324 and v<=n and d>=v+2 for n,v,d in grass), grass
+        assert any(v>0 for n,v,d in grass), grass
+        print(f'::notice title=Grass visibility and total draw calls::{grass}')
 PYCODE

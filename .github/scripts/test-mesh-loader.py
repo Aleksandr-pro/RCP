@@ -64,6 +64,14 @@ int main() {
     assert(loadMesh(&asset, "pyramid", vertices) && vertices.size() == 18);
     assert(vertices[0].position[1] == 0.5f && vertices[0].color[1] == 0.80f);
     checkNormals(vertices);
+    std::ifstream grassFile("ATLAS/app/src/main/assets/models/grass.atlasmesh");
+    assert(grassFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(grassFile)), {});
+    assert(loadMesh(&asset, "grass", vertices) && vertices.size() == 12);
+    for (const auto& v : vertices) {
+        assert(v.position[1] >= 0 && v.position[1] <= 1);
+        assert(v.position[0] == 0 || v.position[2] == 0);
+    }
     std::ifstream stoneFile("ATLAS/app/src/main/assets/models/stone.atlasmesh");
     assert(stoneFile);
     asset.content = std::string((std::istreambuf_iterator<char>(stoneFile)), {});

@@ -87,7 +87,10 @@ b=Image.open('terrain-diagnostics/world-rotated.png')
 print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
-counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) draw calls мира=(\d+)',log)]
+grass=[tuple(map(int,x)) for x in re.findall(r'трава записей=(\d+) видимых=(\d+) draw calls мира=(\d+)',log)]
+assert grass and all(n<=324 and v<=n and d>=v+2 for n,v,d in grass) and any(v>0 for n,v,d in grass), grass
+print(f'::notice title=Grass::records, visible, draw calls: {grass}')
+counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) базовых draw calls мира=(\d+)',log)]
 assert len(counts)>=10 and all(0 <= stones <= 144 and draws == stones+2 for stones,draws in counts), counts
 print(f'::notice title=Stone draw calls::per active area stones and total scene draws: {counts}')
 assert 'move_start' in log and 'move_end' in log
