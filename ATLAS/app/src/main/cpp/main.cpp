@@ -125,6 +125,10 @@ namespace
 
     bool moveObserver(EngineState* state, float x, float z)
     {
+        // All nine active chunks must stay within StonePlacement's supported range.
+        atlas::world::ChunkCoord next{};
+        if (!atlas::world::worldToChunk(x, z, next) ||
+            next.x < -11999 || next.x > 11999 || next.z < -11999 || next.z > 11999) return false;
         bool changed = false;
         const bool wasReady = state->worldReady;
         if (!state->world.moveTo(x, z, changed)) return false;

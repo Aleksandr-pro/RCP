@@ -4,6 +4,7 @@
 #include "../scene/SceneLoader.h"
 #include "../scene/TextureLoader.h"
 #include "../world/TerrainMesh.h"
+#include "../world/ActiveStones.h"
 
 #include <android/log.h>
 
@@ -1843,6 +1844,17 @@ bool VulkanRenderer::createVertexBuffer(
         ranges.push_back(range);
     }
 
+    if (terrainBuffer_)
+    {
+        std::vector<Vertex> model;
+        if (!atlas::loadMesh(assetManager, "models/stone.atlasmesh", model) ||
+            model.size() > MAX_TOTAL_VERTICES - vertices.size() ||
+            !atlas::world::buildActiveStones(terrainCenter_, stones_)) return false;
+        ranges.push_back({"stone", static_cast<uint32_t>(vertices.size()), static_cast<uint32_t>(model.size())});
+        vertices.insert(vertices.end(), model.begin(), model.end());
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
+    }
+
     if (vertices.empty())
     {
         __android_log_print(
@@ -2119,7 +2131,7 @@ bool VulkanRenderer::recordCommandBuffers(
         );
         const Matrix4 projection = perspective(aspect);
 
-        for (const atlas::SceneObject& object : sceneObjects_)
+        auto drawObject = [&](const atlas::SceneObject& object) -> bool
         {
             // Собственный поворот объекта не зависит от камеры.
             const Matrix4 rotation = rotationY(object.rotationOffset);
@@ -2159,6 +2171,7 @@ bool VulkanRenderer::recordCommandBuffers(
             push.lightDirection[2] = s * lightX + c * lightZ;
             push.lightDirection[3] = 0.0f;
             if (object.meshName == "terrain") push.lightDirection[3] = 1.0f;
+            else if (object.meshName == "stone") push.lightDirection[3] = 2.0f;
 
             vkCmdPushConstants(
                 commandBuffers_[i],
@@ -2199,6 +2212,24 @@ bool VulkanRenderer::recordCommandBuffers(
                 selectedMesh->firstVertex,
                 0
             );
+            return true;
+        };
+        for (const auto& object : sceneObjects_)
+            if (!drawObject(object)) return false;
+        if (terrainBuffer_)
+        {
+            // Terrain is rebased to the center chunk and transformed by its scene object.
+            const auto& terrain = sceneObjects_.front();
+            for (const auto& stone : stones_)
+            {
+                const float scale = stone.scale * terrain.scale;
+                const atlas::SceneObject object{
+                    terrain.x + static_cast<float>(stone.x - double(terrainCenter_.x) * atlas::world::CHUNK_SIZE) * terrain.scale,
+                    terrain.y + static_cast<float>(stone.y + stone.scale * 0.5) * terrain.scaleY,
+                    terrain.z + static_cast<float>(stone.z - double(terrainCenter_.z) * atlas::world::CHUNK_SIZE) * terrain.scaleZ,
+                    scale, stone.scale * terrain.scaleY, stone.scale * terrain.scaleZ, stone.rotationY, "stone"};
+                if (!drawObject(object)) return false;
+            }
         }
 
         vkCmdEndRenderPass(commandBuffers_[i]);
@@ -2220,7 +2251,9 @@ bool VulkanRenderer::updateTerrain(atlas::world::ChunkCoord center)
     if (!initialized_ || !terrainBuffer_) return false;
     if (center == terrainCenter_) return true;
     std::vector<Vertex> vertices;
-    if (!atlas::world::buildTerrain(center, vertices) || vertices.size() != atlas::world::TERRAIN_VERTICES) return false;
+    std::vector<atlas::world::StonePlacement> stones;
+    if (!atlas::world::buildTerrain(center, vertices) || vertices.size() != atlas::world::TERRAIN_VERTICES ||
+        !atlas::world::buildActiveStones(center, stones)) return false;
     // Keep the existing fixed-size buffer and ensure no submitted draw can read it while updating.
     if (!checkResult(vkQueueWaitIdle(queue_), "terrain update wait")) return false;
     void* mapped = nullptr;
@@ -2229,6 +2262,8 @@ bool VulkanRenderer::updateTerrain(atlas::world::ChunkCoord center)
     std::memcpy(mapped, vertices.data(), static_cast<size_t>(bytes));
     vkUnmapMemory(device_, vertexBufferMemory_);
     terrainCenter_ = center;
+    stones_.swap(stones);
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "ATLAS: камешков=%u draw calls мира=%u", static_cast<unsigned>(stones_.size()), static_cast<unsigned>(stones_.size() + sceneObjects_.size()));
     return true;
 }
 
@@ -2411,6 +2446,7 @@ void VulkanRenderer::shutdown()
     initialized_ = false;
     swapchainOutOfDate_ = false;
     terrainBuffer_ = false;
+    stones_.clear();
     sceneObjects_.clear();
     meshRanges_.clear();
 

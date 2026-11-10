@@ -31,7 +31,9 @@ vec3 variedTexture(sampler2D tex, vec2 worldXZ, float variation)
 void main()
 {
     vec3 surfaceColor;
-    if (isTerrain > 0.5)
+    if (isTerrain > 1.5)
+        surfaceColor = texture(stoneTexture, vertexUV).rgb;
+    else if (isTerrain > 0.5)
     {
         float sandToGround = smoothstep(-0.30, -0.10, terrainHeight);
         float groundToStone = smoothstep(0.25, 0.45, terrainHeight);

@@ -2,6 +2,7 @@
 
 #include "../scene/TestScene.h"
 #include "../world/ChunkGrid.h"
+#include "../world/StonePlacement.h"
 
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
@@ -87,6 +88,7 @@ private:
 
     atlas::world::ChunkCoord terrainCenter_{};
     bool terrainBuffer_ = false;
+    std::vector<atlas::world::StonePlacement> stones_;
     std::vector<MeshRange> meshRanges_;
     std::vector<atlas::SceneObject> sceneObjects_;
 
