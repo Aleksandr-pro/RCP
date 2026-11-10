@@ -65,6 +65,7 @@ for name in ('world-before', 'world-return', 'world-rotated'):
     print(f'{name}: {image.width}x{image.height}, nonuniform center')
 a=Image.open('terrain-diagnostics/world-before.png')
 b=Image.open('terrain-diagnostics/world-rotated.png')
+print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
 body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', Path('terrain-diagnostics/body-fall.txt').read_text())]
@@ -74,8 +75,10 @@ assert all(y + 1e-7 >= ground + half for y, velocity, ground, half in body), 'bo
 assert min(v for y,v,g,h in body)<-1 and max(v for y,v,g,h in body)>0.1, 'no fall or rebound'
 assert any(abs(v)<1e-7 and abs(y-g-h)<1e-6 for y,v,g,h in body[-100:]), 'body did not settle'
 print('::notice title=Terrain body test::observed fall, rebound, and rest without penetration at center')
+print(f"::notice title=World gestures::orbit={'orbit world=1' in log} pinch={'pinch world=1' in log}")
 assert 'orbit world=1' in log and 'pinch world=1' in log, 'world camera gestures not detected'
 focus=re.findall(r'(lost|gain) world=1 y=(-?[0-9.]+) velocity=(-?[0-9.]+)',log)
+print(f'::notice title=Focus traces::{focus}')
 assert len(focus)>=2, f'missing world focus events: {focus}'
 for i,(event,y,v) in enumerate(focus[:-1]):
     if event=='lost' and focus[i+1][0]=='gain' and abs(float(v)) > 0.001:
