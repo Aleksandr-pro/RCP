@@ -35,6 +35,7 @@ void AAsset_close(AAsset* a) { delete a; }
 suffix = r'''
 using atlas::loadTestTexture;
 using atlas::loadOrnamentTexture;
+using atlas::loadTerrainTexture;
 int main() {
     std::ifstream file("ATLAS/app/src/main/assets/textures/checker.rgba", std::ios::binary);
     assert(file);
@@ -70,6 +71,20 @@ int main() {
         assert(!loadOrnamentTexture(&actual, "ornament", pixels) && pixels.empty());
     }
 
+    for (const char* name : {"sand", "ground", "stone"}) {
+        std::ifstream in(std::string("ATLAS/app/src/main/assets/textures/")+name+".rgba", std::ios::binary);
+        assert(in);
+        const std::string content((std::istreambuf_iterator<char>(in)), {});
+        assert(content.size() == 512*512*4);
+        AAssetManager material{content};
+        assert(loadTerrainTexture(&material, name, pixels) && pixels.size()==content.size());
+        assert(std::equal(pixels.begin(), pixels.end(), content.begin(), [](uint8_t a,char b){ return a==static_cast<uint8_t>(b); }));
+        material.shortRead=true; assert(!loadTerrainTexture(&material,name,pixels) && pixels.empty()); material.shortRead=false;
+        material.content.pop_back(); assert(!loadTerrainTexture(&material,name,pixels) && pixels.empty());
+        material.content.assign(512*512*4+1,'x'); assert(!loadTerrainTexture(&material,name,pixels) && pixels.empty());
+    }
+    assert(!loadTerrainTexture(nullptr, "sand", pixels) && pixels.empty());
+    assert(!loadTerrainTexture(&asset, nullptr, pixels) && pixels.empty());
     assert(!loadTestTexture(nullptr, "checker", pixels) && pixels.empty());
     assert(!loadTestTexture(&asset, nullptr, pixels) && pixels.empty());
     asset.missing = true; pixels.push_back(1); assert(!loadTestTexture(&asset, "checker", pixels) && pixels.empty()); asset.missing = false;

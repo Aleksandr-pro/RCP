@@ -7,6 +7,8 @@ layout(location = 3) in vec2 inUV;
 
 layout(location = 0) out float vertexBrightness;
 layout(location = 1) out vec2 vertexUV;
+layout(location = 2) out float terrainHeight;
+layout(location = 3) flat out float isTerrain;
 
 layout(push_constant) uniform PushConstants
 {
@@ -26,4 +28,6 @@ void main()
 
     vertexBrightness = brightness;
     vertexUV = inUV;
+    terrainHeight = inPosition.y;
+    isTerrain = pushConstants.lightDirection.w;
 }
