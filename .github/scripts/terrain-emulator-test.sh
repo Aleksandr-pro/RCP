@@ -3,7 +3,7 @@ set -Eeuo pipefail
 mkdir -p terrain-diagnostics
 package=com.atlas.engine
 trap 'adb logcat -d -s ATLAS:I "*:S" > terrain-diagnostics/log.txt || true; tail -80 terrain-diagnostics/log.txt; echo "::error::Terrain test failed at line $LINENO"' ERR
-adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r "$RUNNER_TEMP/terrain-normal.apk"
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb shell am force-stop "$package"
@@ -49,7 +49,7 @@ adb shell settings put system user_rotation 0
 sleep 5
 touch_test switch
 sleep 5
-adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I '*:S' > terrain-diagnostics/log.txt
+adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/log.txt
 grep -q 'материал рельефа x=4.000 z=4.000 surface=stone restitution=0.70' terrain-diagnostics/log.txt
 [ "$(grep -c 'материал рельефа' terrain-diagnostics/log.txt)" -eq 1 ]
 grep -q 'сцена мира' terrain-diagnostics/log.txt
@@ -83,6 +83,11 @@ movement=log.split('move_start',1)[1].split('move_end',1)[0]
 assert 'Текстура загружена:' not in movement, 'textures reloaded on chunk transitions'
 for material in ('sand', 'ground', 'stone'):
     assert ('textures/'+material+'.rgba') in log, 'missing texture load: '+material
+for i in range(3):
+    created=len(re.findall(fr'ATLAS_TEXTURE_TEST.*create index={i}', log))
+    destroyed=len(re.findall(fr'ATLAS_TEXTURE_TEST.*destroy index={i}', log))
+    assert created >= 2 and created-destroyed == 1, (i,created,destroyed)
+print('::notice title=Texture lifecycle::three shared texture resources released on each tested renderer recreation')
 # A compact screenshot is embedded in CI annotations for visual review.
 import base64, io
 shot=Image.open('terrain-diagnostics/world-before.png').convert('RGB')
@@ -115,4 +120,26 @@ def pss(name):
     assert m, 'missing PSS'
     return int(m.group(1))
 print('::notice title=Terrain emulator metrics::FPS samples '+', '.join(fps)+'; total PSS before/after movement '+str(pss('before'))+'/'+str(pss('after'))+' kB')
+PYCODE
+
+# Test-only palette demonstrates that the actual GPU shader samples and mixes
+# all three descriptor bindings, independently of photographic texture colors.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/terrain-palette.apk"
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+touch_test switch
+sleep 3
+adb shell input swipe 160 400 160 240 400
+sleep 3
+adb exec-out screencap -p > terrain-diagnostics/palette.png
+python3 - <<'PYCODE'
+from PIL import Image
+im=Image.open('terrain-diagnostics/palette.png').convert('RGB')
+colors=list(im.getdata())
+red=sum(1 for r,g,b in colors if r>50 and r>b*3 and r>g*3)
+magenta=sum(1 for r,g,b in colors if r>35 and b>35 and min(r,b)>g*3 and max(r,b)<min(r,b)*2)
+blue=sum(1 for r,g,b in colors if b>50 and b>r*3 and b>g*3)
+print(f'::notice title=GPU material palette::sand={red} ground={magenta} stone={blue} pixels')
+assert min(red,magenta,blue)>10, 'one or more material textures were not visible'
 PYCODE
