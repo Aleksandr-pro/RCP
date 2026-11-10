@@ -14,9 +14,15 @@ sleep 7
 adb push "$RUNNER_TEMP/terrain.jar" /data/local/tmp/terrain.jar >/dev/null
 read -r width height < <(adb shell wm size | sed -n 's/.*: \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -1 | tr -d '\r')
 touch_test() { adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / TerrainInput "$1" "$width" "$height" "${2:-1}"; }
-touch_test switch
-sleep 0.2
-adb shell input keyevent KEYCODE_HOME
+# Switch HOME as soon as the first simulation step is observed, not after
+# waiting for the entire injected gesture (which can take several seconds).
+( set +o pipefail; timeout 25s stdbuf -oL adb logcat -s ATLAS_TERRAIN_BODY_TEST:I '*:S' |
+  while IFS= read -r line; do
+    if [[ "$line" == *'velocity=-'* ]]; then adb shell input keyevent KEYCODE_HOME; break; fi
+  done ) &
+focus_trigger=$!
+touch_test switch || true
+wait "$focus_trigger"
 sleep 2
 adb shell am start -n "$package/.AtlasActivity"
 sleep 8
