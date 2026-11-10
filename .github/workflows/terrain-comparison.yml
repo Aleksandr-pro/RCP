@@ -50,3 +50,29 @@ jobs:
           name: terrain-variation-comparison
           path: terrain-variation-comparison/
           if-no-files-found: ignore
+  phone-apks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android components
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
+      - name: Build two equally signed phone APKs
+        run: |
+          mkdir -p comparison-apks
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk comparison-apks/ATLAS-0.27f-varied.apk
+          GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
+          "$GLSLC" -fshader-stage=frag .github/fixtures/terrain-0.27e.frag -o ATLAS/app/src/main/assets/shaders/triangle.frag.spv
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk comparison-apks/ATLAS-0.27f-reference-0.27e-shader.apk
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          for apk in comparison-apks/*.apk; do "$APKSIGNER" verify --print-certs "$apk"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATLAS-0.27f-comparison-phone-apks
+          path: comparison-apks/*.apk
+          if-no-files-found: error
