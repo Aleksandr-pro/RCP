@@ -38,7 +38,7 @@ public final class TerrainInput {
             int count=Integer.parseInt(args[3]);
             for(int i=0;i<count;i++) {
                 gesture(3,width*.2f,height*.4f,width*.6f,0);
-                gesture(3,width*.8f,height*.4f,-width*.6f,0);
+                gesture(3,width*.8f,height*.4f,-width*.61f,0);
             }
         }
     }

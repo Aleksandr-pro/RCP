@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 mkdir -p terrain-diagnostics
 package=com.atlas.engine
-trap 'adb logcat -d -s ATLAS:I "*:S" > terrain-diagnostics/log.txt || true; echo "::error::Terrain test failed at line $LINENO"' ERR
+trap 'adb logcat -d -s ATLAS:I "*:S" > terrain-diagnostics/log.txt || true; tail -80 terrain-diagnostics/log.txt; echo "::error::Terrain test failed at line $LINENO"' ERR
 adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
@@ -37,6 +37,8 @@ grep -q 'сцена мира' terrain-diagnostics/log.txt
 grep -q 'физическая сцена' terrain-diagnostics/log.txt
 grep -q 'Участок: x=-1 z=0, активных=9' terrain-diagnostics/log.txt
 grep -q 'Участок: x=0 z=0, активных=9' terrain-diagnostics/log.txt
+[ "$(grep -c 'Участок:' terrain-diagnostics/log.txt)" -ge 10 ]
+! grep 'Участок:' terrain-diagnostics/log.txt | grep -v 'активных=9'
 grep 'ATLAS stats: FPS=' terrain-diagnostics/log.txt > terrain-diagnostics/fps.txt
 cat terrain-diagnostics/fps.txt
 printf '\nMemory before and after movement (kB):\n'
