@@ -7,6 +7,7 @@ adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb shell am force-stop "$package"
+adb logcat -G 16M
 adb logcat -c
 adb shell am start -n "$package/.AtlasActivity"
 sleep 7
