@@ -16,7 +16,7 @@ jobs:
           set -o pipefail
           if ! blender -b --threads 2 --python-exit-code 77 \
             --python ATLAS/city-source/city_blender.py \
-            --python-expr "import bpy; print('ATLAS_CITY_COUNTS meshes=%d lights=%d' % (sum(o.type == 'MESH' for o in bpy.context.scene.objects), sum(o.type == 'LIGHT' for o in bpy.context.scene.objects))); bpy.ops.wm.save_as_mainfile(filepath='$GITHUB_WORKSPACE/city-output/city.blend')" \
+            --python-expr "import bpy; print('ATLAS_CITY_COUNTS meshes=%d lights=%d' % (sum(o.type == 'MESH' for o in bpy.context.scene.objects), sum(o.type == 'LIGHT' for o in bpy.context.scene.objects))); bpy.ops.wm.save_as_mainfile(filepath='$GITHUB_WORKSPACE/city-output/city.blend'); bpy.context.scene.cycles.use_denoising=False; print('CI preview only: Blender package lacks OpenImageDenoise; rendering without denoiser')" \
             -o "$GITHUB_WORKSPACE/city-output/city" -F PNG -f 1 2>&1 | tee "$RUNNER_TEMP/blender.log"; then
             tail -8 "$RUNNER_TEMP/blender.log" | while IFS= read -r line; do echo "::error::$line"; done
             cp "$RUNNER_TEMP/blender.log" city-output/blender.log

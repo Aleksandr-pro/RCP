@@ -8,7 +8,9 @@ it is **not yet** an ATLAS runtime asset.
 
 The `City Blender source preview` GitHub workflow runs the script in a fresh
 headless Blender process, saves `city.blend`, and renders a 1600x1200 PNG using
-the requested 128 Cycles samples. Download the artifact from that workflow run.
+the requested 128 Cycles samples. Ubuntu Blender lacks OpenImageDenoise, so
+only the CI PNG preview is rendered without denoising; the saved `.blend`
+retains the requested setting. Download the artifact from that workflow run.
 Blender/Cycles settings, procedural nodes, lights and camera do not automatically
 work in the current mobile Vulkan renderer; bringing the scene into the engine
 requires an explicit export and mobile rendering implementation.
