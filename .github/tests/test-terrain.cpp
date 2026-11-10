@@ -11,6 +11,8 @@ int main()
         for (int i=0; i<=TERRAIN_CELLS; ++i) {
             auto a=terrainVertex(base,base,16,i), b=terrainVertex({x+1,z},base,0,i);
             auto c=terrainVertex(base,base,i,16), d=terrainVertex({x,z+1},base,i,0);
+            assert(a.uv[0]*CHUNK_SIZE == b.uv[0]*CHUNK_SIZE);
+            assert(a.uv[1]*CHUNK_SIZE == b.uv[1]*CHUNK_SIZE);
             assert(std::memcmp(&a,&b,sizeof(a)) == 0);
             assert(std::memcmp(&c,&d,sizeof(c)) == 0);
             for (auto v : {a,c}) {
