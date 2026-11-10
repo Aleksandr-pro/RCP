@@ -9,6 +9,7 @@ layout(location = 0) out float vertexBrightness;
 layout(location = 1) out vec2 vertexUV;
 layout(location = 2) out float terrainHeight;
 layout(location = 3) flat out float isTerrain;
+layout(location = 4) out vec2 worldXZ;
 
 layout(push_constant) uniform PushConstants
 {
@@ -30,4 +31,6 @@ void main()
     vertexUV = inUV;
     terrainHeight = inPosition.y;
     isTerrain = pushConstants.lightDirection.w;
+    // Terrain UVs are world X/Z divided by CHUNK_SIZE (8.0).
+    worldXZ = inUV * 8.0;
 }

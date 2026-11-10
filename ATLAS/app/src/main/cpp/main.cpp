@@ -58,6 +58,8 @@ namespace
         float angle = 0.55f;
         float tiltAngle = -0.35f;
         float cameraDistance = 4.0f;
+        // Preserve the other scene's zoom when switching between physics and world.
+        float otherSceneCameraDistance = 4.0f;
 
         bool touchActive = false;
         int32_t activePointerId = -1;
@@ -649,6 +651,7 @@ namespace
         if (!state->consumeGesture && pointerCount >= 4 && actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN)
         {
             state->worldScene = !state->worldScene;
+            std::swap(state->cameraDistance, state->otherSceneCameraDistance);
             state->worldGesture = false;
             state->consumeGesture = true;
             state->touchActive = state->pinchActive = false;
@@ -793,7 +796,7 @@ namespace
 
                         state->cameraDistance = std::clamp(
                             state->cameraDistance,
-                            2.5f,
+                            state->worldScene ? 0.7f : 2.5f,
                             10.0f
                         );
 
