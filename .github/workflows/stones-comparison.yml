@@ -1,0 +1,52 @@
+name: Stones comparison emulator
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 917049205d00cc9b086c4afbaa53cbd2948523f9
+          path: baseline
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android components
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
+      - name: Build both emulator versions
+        env:
+          ATLAS_TEST_ABI: x86_64
+        run: |
+          (cd baseline/ATLAS && ./gradlew assembleDebug)
+          cp baseline/ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/baseline.apk"
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/stones.apk"
+          mkdir -p "$RUNNER_TEMP/classes" "$RUNNER_TEMP/dex"
+          javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/classes" .github/scripts/TerrainInput.java .github/scripts/PinchInput.java
+          D8=$(find "$ANDROID_HOME/build-tools" -name d8 -type f | sort -V | tail -n 1)
+          "$D8" --min-api 26 --output "$RUNNER_TEMP/dex" "$RUNNER_TEMP/classes/TerrainInput.class" "$RUNNER_TEMP/classes/PinchInput.class"
+          (cd "$RUNNER_TEMP/dex" && jar cf "$RUNNER_TEMP/stone-compare.jar" classes.dex)
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Compare same camera and movement
+        timeout-minutes: 12
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: .github/scripts/stones-comparison.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stones-emulator-comparison
+          path: stones-comparison/
+          if-no-files-found: ignore

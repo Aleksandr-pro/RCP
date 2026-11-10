@@ -33,6 +33,18 @@ jobs:
           (cd ATLAS && ./gradlew assembleDebug)
           cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/terrain-missing.apk"
           git checkout -- ATLAS/app/src/main/assets/textures/stone.rgba
+          # Emulator-only diagnostic: make stone fragments magenta; never packaged in the production APK.
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          p=Path('ATLAS/app/src/main/shaders/triangle.frag')
+          s=p.read_text()
+          needle='surfaceColor = texture(stoneTexture, vertexUV).rgb;'
+          assert s.count(needle)==1
+          p.write_text(s.replace(needle, 'surfaceColor = vec3(1.0, 0.0, 1.0);'))
+          PYCODE
+          "$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc" ATLAS/app/src/main/shaders/triangle.frag -o ATLAS/app/src/main/assets/shaders/triangle.frag.spv
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/terrain-stone-diagnostic.apk"
           mkdir -p "$RUNNER_TEMP/terrain-classes" "$RUNNER_TEMP/terrain-dex"
           javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/terrain-classes" .github/scripts/TerrainInput.java .github/scripts/PinchInput.java
           D8=$(find "$ANDROID_HOME/build-tools" -name d8 -type f | sort -V | tail -n 1)
