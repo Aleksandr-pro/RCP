@@ -18,8 +18,7 @@ jobs:
             --python ATLAS/city-source/city_blender.py \
             --python-expr "import bpy; print('ATLAS_CITY_COUNTS meshes=%d lights=%d' % (sum(o.type == 'MESH' for o in bpy.context.scene.objects), sum(o.type == 'LIGHT' for o in bpy.context.scene.objects))); bpy.ops.wm.save_as_mainfile(filepath='$GITHUB_WORKSPACE/city-output/city.blend')" \
             -o "$GITHUB_WORKSPACE/city-output/city" -F PNG -f 1 2>&1 | tee "$RUNNER_TEMP/blender.log"; then
-            grep -E -A5 'Traceback|Error|error|Exception|Segmentation|signal|Killed' "$RUNNER_TEMP/blender.log" | head -8 | while IFS= read -r line; do echo "::error::$line"; done || true
-            tail -4 "$RUNNER_TEMP/blender.log" | while IFS= read -r line; do echo "::error::$line"; done
+            tail -8 "$RUNNER_TEMP/blender.log" | while IFS= read -r line; do echo "::error::$line"; done
             cp "$RUNNER_TEMP/blender.log" city-output/blender.log
             exit 1
           fi
