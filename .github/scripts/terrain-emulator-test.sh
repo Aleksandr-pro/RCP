@@ -43,10 +43,19 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 6
 adb shell log -p i -t ATLAS_TERRAIN_MARK resumed
 adb shell settings put system user_rotation 1
-sleep 6
-adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
+for attempt in $(seq 1 15); do
+    sleep 2
+    adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
+    if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'; then break; fi
+done
+python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'
 adb shell settings put system user_rotation 0
-sleep 5
+for attempt in $(seq 1 15); do
+    sleep 2
+    adb exec-out screencap -p > terrain-diagnostics/world-portrait-again.png
+    if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'; then break; fi
+done
+python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'
 touch_test switch
 sleep 5
 adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/log.txt
