@@ -13,6 +13,7 @@
 #include "physics/VerticalPhysics.h"
 #include "physics/SurfaceSlide.h"
 #include "scene/MaterialConfig.h"
+#include "world/ChunkWorld.h"
 
 namespace
 {
@@ -21,6 +22,12 @@ namespace
     struct EngineState
     {
         VulkanRenderer renderer;
+        atlas::world::ChunkWorld world;
+        bool worldScene = false;
+        bool worldReady = false;
+        bool worldGesture = false;
+        bool consumeGesture = false;
+        float worldTouchX = 0.0f, worldTouchY = 0.0f;
         atlas::physics::Platform platform{0.0f, -1.0f, 0.0f, 3.0f, 0.1f, 1.0f};
         std::vector<atlas::physics::Box> boxes{
             {-0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
@@ -89,6 +96,35 @@ namespace
             "%s",
             message
         );
+    }
+
+    bool syncWorldScene(EngineState* state)
+    {
+        const auto& chunks = state->world.active();
+        if (chunks.size() != 9 || state->renderer.sceneObjects().size() != 9) return false;
+        constexpr double scale = 0.15;
+        for (size_t i = 0; i < chunks.size(); ++i)
+        {
+            // Rebase the nearby tiles around the observer before converting to float.
+            const float x = static_cast<float>((double(chunks[i].x) * atlas::world::CHUNK_SIZE + 4.0 - state->world.x()) * scale);
+            const float z = static_cast<float>((double(chunks[i].z) * atlas::world::CHUNK_SIZE + 4.0 - state->world.z()) * scale);
+            if (!state->renderer.setObjectPosition(i, x, -0.5f, z)) return false;
+        }
+        return true;
+    }
+
+    bool moveObserver(EngineState* state, float x, float z)
+    {
+        bool changed = false;
+        const bool wasReady = state->worldReady;
+        if (!state->world.moveTo(x, z, changed)) return false;
+        state->worldReady = true;
+        if (wasReady && changed)
+        {
+            const auto c = state->world.center();
+            __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Участок: x=%d z=%d, активных=%u", c.x, c.z, static_cast<unsigned>(state->world.active().size()));
+        }
+        return true;
     }
 
     bool validBouncingBox(const EngineState& state)
@@ -160,7 +196,7 @@ namespace
         }
 
         // Renderer recreation preserves physics; only a new simulation reads the asset.
-        if (!state->physicsConfigured &&
+        if (!state->worldScene && !state->physicsConfigured &&
             !atlas::loadMaterialConfig(app->activity->assetManager,
                                        "scenes/physics_materials.txt", state->contact, state->friction))
         {
@@ -184,28 +220,44 @@ namespace
 
             if (!state->renderer.initialize(
                     app->window,
-                    app->activity->assetManager
+                    app->activity->assetManager,
+                    state->worldScene ? "scenes/world.atlasscene" : "scenes/physics.atlasscene"
                 ))
             {
                 logError("ATLAS: ошибка запуска Vulkan-рендерера.");
                 return false;
             }
 
-            if ((!state->physicsConfigured && (!atlas::physics::validate(state->platform, state->boxes) || !validBouncingBox(*state))) ||
-                !bindPhysicsScene(state) || !syncPhysicsScene(state) ||
-                !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
+            if (state->worldScene)
             {
-                logError("ATLAS: недопустимое физическое состояние или связь объектов сцены.");
-                state->renderer.shutdown();
-                return false;
+                if ((!state->worldReady && !moveObserver(state, 0.0f, 0.0f)) ||
+                    !syncWorldScene(state) ||
+                    !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
+                {
+                    logError("ATLAS: не удалось создать сцену участков.");
+                    state->renderer.shutdown();
+                    return false;
+                }
             }
-            if (!state->physicsConfigured)
+            else
             {
-                state->physicsConfigured = true;
-                state->physicsRunning = true;
+                if ((!state->physicsConfigured && (!atlas::physics::validate(state->platform, state->boxes) || !validBouncingBox(*state))) ||
+                    !bindPhysicsScene(state) || !syncPhysicsScene(state) ||
+                    !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
+                {
+                    logError("ATLAS: недопустимое физическое состояние или связь объектов сцены.");
+                    state->renderer.shutdown();
+                    return false;
+                }
+                if (!state->physicsConfigured)
+                {
+                    state->physicsConfigured = true;
+                    state->physicsRunning = true;
+                }
+                state->physicsAccumulator = 0.0;
+                state->physicsTime = std::chrono::steady_clock::now();
+
             }
-            state->physicsAccumulator = 0.0;
-            state->physicsTime = std::chrono::steady_clock::now();
 
             if (state->renderer.drawFrame())
             {
@@ -427,7 +479,7 @@ namespace
         const auto now = std::chrono::steady_clock::now();
         const auto workStartTime = now;
 
-        if (state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
+        if (!state->worldScene && state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
         {
             constexpr double fixedStep = 1.0 / 60.0;
             const double elapsed = std::chrono::duration<double>(now - state->physicsTime).count();
@@ -453,7 +505,7 @@ namespace
             }
         }
         state->physicsTime = now;
-        if (!syncPhysicsScene(state))
+        if (state->worldScene ? !syncWorldScene(state) : !syncPhysicsScene(state))
         {
             logError("ATLAS: не удалось обновить положения кубов.");
             state->renderer.shutdown();
@@ -517,6 +569,55 @@ namespace
 
         const size_t pointerCount =
             AMotionEvent_getPointerCount(event);
+
+        // Four fingers switch scenes. Suppress remaining pointers until all are lifted.
+        if (!state->consumeGesture && pointerCount >= 4 && actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN)
+        {
+            state->worldScene = !state->worldScene;
+            state->worldGesture = false;
+            state->consumeGesture = true;
+            state->touchActive = state->pinchActive = false;
+            state->physicsTime = {};
+            state->physicsAccumulator = 0.0;
+            logInfo(state->worldScene ? "ATLAS: сцена мира." : "ATLAS: физическая сцена.");
+            restartRenderer(app, state);
+            return 1;
+        }
+        if (state->consumeGesture)
+        {
+            if (actionMasked == AMOTION_EVENT_ACTION_UP || actionMasked == AMOTION_EVENT_ACTION_CANCEL)
+                state->consumeGesture = false;
+            return 1;
+        }
+        if (state->worldScene && pointerCount == 3 && app->window != nullptr)
+        {
+            const float x = (AMotionEvent_getX(event, 0) + AMotionEvent_getX(event, 1) + AMotionEvent_getX(event, 2)) / 3.0f;
+            const float y = (AMotionEvent_getY(event, 0) + AMotionEvent_getY(event, 1) + AMotionEvent_getY(event, 2)) / 3.0f;
+            if (!state->worldGesture)
+            {
+                state->worldGesture = true;
+                state->touchActive = state->pinchActive = false;
+                state->worldTouchX = x;
+                state->worldTouchY = y;
+            }
+            else if (actionMasked == AMOTION_EVENT_ACTION_MOVE)
+            {
+                const int width = ANativeWindow_getWidth(app->window);
+                const int height = ANativeWindow_getHeight(app->window);
+                if (width > 0 && height > 0 &&
+                    !moveObserver(state, state->world.x() - (x - state->worldTouchX) * 16.0f / width,
+                                  state->world.z() - (y - state->worldTouchY) * 16.0f / height))
+                    logError("ATLAS: координаты наблюдателя вне диапазона.");
+                state->worldTouchX = x;
+                state->worldTouchY = y;
+            }
+            if (actionMasked == AMOTION_EVENT_ACTION_POINTER_UP || actionMasked == AMOTION_EVENT_ACTION_CANCEL)
+            {
+                state->worldGesture = false;
+                state->consumeGesture = true;
+            }
+            return 1;
+        }
 
         switch (actionMasked)
         {
@@ -779,6 +880,8 @@ namespace
             case APP_CMD_LOST_FOCUS:
                 state->physicsAccumulator = 0.0;
                 state->physicsTime = {};
+                state->worldGesture = false;
+                state->consumeGesture = false;
                 state->hasFocus = false;
                 state->touchActive = false;
                 state->pinchActive = false;

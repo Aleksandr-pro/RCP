@@ -24,7 +24,8 @@ public:
     // Создаёт Vulkan-ресурсы для текущего окна.
     bool initialize(
         ANativeWindow* window,
-        AAssetManager* assetManager
+        AAssetManager* assetManager,
+        const char* scenePath = "scenes/physics.atlasscene"
     );
 
     // Выводит один кадр.

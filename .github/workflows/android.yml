@@ -27,6 +27,8 @@ jobs:
           /tmp/test-materials
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-slide.cpp -o /tmp/test-slide
           /tmp/test-slide
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-chunks.cpp -o /tmp/test-chunks
+          /tmp/test-chunks
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -43,12 +45,12 @@ jobs:
           import zipfile
           from pathlib import Path
           with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
-              for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'scenes/physics.atlasscene', 'scenes/physics_materials.txt', 'models/cube.atlasmesh'):
+              for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'scenes/physics.atlasscene', 'scenes/world.atlasscene', 'scenes/physics_materials.txt', 'models/cube.atlasmesh'):
                   assert apk.read('assets/' + name) == Path('ATLAS/app/src/main/assets/' + name).read_bytes(), name
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.26f-debug
+          name: ATLAS-0.27a-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:

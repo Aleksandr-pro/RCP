@@ -3,7 +3,7 @@ from pathlib import Path
 p = Path('ATLAS/app/src/main/cpp/main.cpp')
 s = p.read_text()
 s = s.replace('#include <chrono>', '#include <chrono>\n#include <thread>')
-needle = '        if (!syncPhysicsScene(state))'
+needle = '        if (state->worldScene ? !syncWorldScene(state) : !syncPhysicsScene(state))'
 assert s.count(needle) == 1
 s = s.replace(needle, '        __android_log_print(ANDROID_LOG_INFO, "ATLAS_PHYS_TEST", "frame y=%.9f velocity=%.9f rest=%.9f", state->bouncingBox.y, state->bouncingBox.velocityY, (state->platform.y + state->platform.halfY + state->bouncingBox.halfY));\n        for (size_t i=0; i<state->boxes.size(); ++i) __android_log_print(ANDROID_LOG_INFO, "ATLAS_PHYS_TEST", "box=%zu y=%.9f velocity=%.9f", i, state->boxes[i].y, state->boxes[i].velocityY);\n        __android_log_print(ANDROID_LOG_INFO, "ATLAS_PHYS_TEST", "box=2 y=%.9f velocity=%.9f", state->bouncingBox.y, state->bouncingBox.velocityY);\n        static bool testDelayed = false;\n        if (!testDelayed && state->bouncingBox.velocityY < 0.0) { testDelayed = true; std::this_thread::sleep_for(std::chrono::seconds(2)); }\n' + needle)
 needle = '                state->physicsAccumulator -= fixedStep;'
