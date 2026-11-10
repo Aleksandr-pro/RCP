@@ -254,7 +254,8 @@ bool VulkanRenderer::isSwapchainOutOfDate() const
 
 bool VulkanRenderer::initialize(
     ANativeWindow* window,
-    AAssetManager* assetManager
+    AAssetManager* assetManager,
+    const char* scenePath
 )
 {
     shutdown();
@@ -281,7 +282,7 @@ bool VulkanRenderer::initialize(
 
     if (!atlas::loadScene(
             assetManager,
-            "scenes/physics.atlasscene",
+            scenePath,
             sceneObjects_
         ) ||
         !createInstance() ||
