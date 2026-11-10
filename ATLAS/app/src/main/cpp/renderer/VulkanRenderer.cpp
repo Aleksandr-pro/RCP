@@ -3,6 +3,7 @@
 #include "../scene/MeshLoader.h"
 #include "../scene/SceneLoader.h"
 #include "../scene/TextureLoader.h"
+#include "../world/TerrainMesh.h"
 
 #include <android/log.h>
 
@@ -1779,11 +1780,13 @@ bool VulkanRenderer::createVertexBuffer(
 
         std::vector<Vertex> modelVertices;
 
-        if (!atlas::loadMesh(
-                assetManager,
-                path.c_str(),
-                modelVertices
-            ))
+        if (object.meshName == "terrain")
+        {
+            if (sceneObjects_.size() != 1 || !atlas::world::buildTerrain({0, 0}, modelVertices)) return false;
+            terrainBuffer_ = true;
+            terrainCenter_ = {0, 0};
+        }
+        else if (!atlas::loadMesh(assetManager, path.c_str(), modelVertices))
         {
             return false;
         }
@@ -2183,6 +2186,23 @@ bool VulkanRenderer::recordCommandBuffers(
     return true;
 }
 
+bool VulkanRenderer::updateTerrain(atlas::world::ChunkCoord center)
+{
+    if (!initialized_ || !terrainBuffer_) return false;
+    if (center == terrainCenter_) return true;
+    std::vector<Vertex> vertices;
+    if (!atlas::world::buildTerrain(center, vertices) || vertices.size() != atlas::world::TERRAIN_VERTICES) return false;
+    // Keep the existing fixed-size buffer and ensure no submitted draw can read it while updating.
+    if (!checkResult(vkQueueWaitIdle(queue_), "terrain update wait")) return false;
+    void* mapped = nullptr;
+    const VkDeviceSize bytes = static_cast<VkDeviceSize>(vertices.size() * sizeof(Vertex));
+    if (!checkResult(vkMapMemory(device_, vertexBufferMemory_, 0, bytes, 0, &mapped), "terrain map")) return false;
+    std::memcpy(mapped, vertices.data(), static_cast<size_t>(bytes));
+    vkUnmapMemory(device_, vertexBufferMemory_);
+    terrainCenter_ = center;
+    return true;
+}
+
 bool VulkanRenderer::setObjectPosition(size_t index, float x, float y, float z)
 {
     if (index >= sceneObjects_.size() || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
@@ -2361,6 +2381,7 @@ void VulkanRenderer::shutdown()
 {
     initialized_ = false;
     swapchainOutOfDate_ = false;
+    terrainBuffer_ = false;
     sceneObjects_.clear();
     meshRanges_.clear();
 

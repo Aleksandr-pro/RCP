@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../scene/TestScene.h"
+#include "../world/ChunkGrid.h"
 
 #define VK_USE_PLATFORM_ANDROID_KHR
 #include <vulkan/vulkan.h>
@@ -40,6 +41,7 @@ public:
     void shutdown();
 
     const std::vector<atlas::SceneObject>& sceneObjects() const { return sceneObjects_; }
+    bool updateTerrain(atlas::world::ChunkCoord center);
     bool setObjectY(size_t index, float y);
     bool setObjectPosition(size_t index, float x, float y, float z);
     bool isInitialized() const;
@@ -82,6 +84,8 @@ private:
         uint32_t vertexCount = 0;
     };
 
+    atlas::world::ChunkCoord terrainCenter_{};
+    bool terrainBuffer_ = false;
     std::vector<MeshRange> meshRanges_;
     std::vector<atlas::SceneObject> sceneObjects_;
 

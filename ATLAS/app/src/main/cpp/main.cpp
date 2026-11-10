@@ -100,16 +100,13 @@ namespace
 
     bool syncWorldScene(EngineState* state)
     {
-        const auto& chunks = state->world.active();
-        if (chunks.size() != 9 || state->renderer.sceneObjects().size() != 9) return false;
+        const auto center = state->world.center();
+        if (state->world.active().size() != 9 || state->renderer.sceneObjects().size() != 1 ||
+            !state->renderer.updateTerrain(center)) return false;
         constexpr double scale = 0.15;
-        for (size_t i = 0; i < chunks.size(); ++i)
-        {
-            // Rebase the nearby tiles around the observer before converting to float.
-            const float x = static_cast<float>((double(chunks[i].x) * atlas::world::CHUNK_SIZE + 4.0 - state->world.x()) * scale);
-            const float z = static_cast<float>((double(chunks[i].z) * atlas::world::CHUNK_SIZE + 4.0 - state->world.z()) * scale);
-            if (!state->renderer.setObjectPosition(i, x, -0.5f, z)) return false;
-        }
+        const float x = static_cast<float>((double(center.x) * atlas::world::CHUNK_SIZE - state->world.x()) * scale);
+        const float z = static_cast<float>((double(center.z) * atlas::world::CHUNK_SIZE - state->world.z()) * scale);
+        if (!state->renderer.setObjectPosition(0, x, -0.5f, z)) return false;
         return true;
     }
 
