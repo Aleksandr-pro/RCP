@@ -31,7 +31,9 @@ adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
 adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
+adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
+adb shell log -p i -t ATLAS_TERRAIN_MARK move_end
 sleep 7
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-after.txt
 adb exec-out screencap -p > terrain-diagnostics/world-return.png
@@ -76,6 +78,17 @@ b=Image.open('terrain-diagnostics/world-rotated.png')
 print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
+assert 'move_start' in log and 'move_end' in log
+movement=log.split('move_start',1)[1].split('move_end',1)[0]
+assert 'Текстура загружена:' not in movement, 'textures reloaded on chunk transitions'
+for material in ('sand', 'ground', 'stone'):
+    assert ('textures/'+material+'.rgba') in log, 'missing texture load: '+material
+# A compact screenshot is embedded in CI annotations for visual review.
+import base64, io
+shot=Image.open('terrain-diagnostics/world-before.png').convert('RGB')
+shot.thumbnail((100,200))
+out=io.BytesIO(); shot.save(out, format='JPEG', quality=48)
+print('::notice title=Terrain screenshot::'+base64.b64encode(out.getvalue()).decode())
 body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', Path('terrain-diagnostics/body-fall.txt').read_text())]
 print(f'::notice title=Terrain body sample::count={len(body)} minVelocity={min((v for y,v,g,h in body),default=0):.3f} maxVelocity={max((v for y,v,g,h in body),default=0):.3f} final={body[-1] if body else None}')
 assert len(body)>100, f'missing body traces: {len(body)}'

@@ -18,6 +18,7 @@ jobs:
           python3 .github/scripts/test-mesh-loader.py
           python3 .github/scripts/test-scene-loader.py
           python3 .github/scripts/test-texture-loader.py
+          python3 .github/scripts/test-terrain-textures.py
           python3 .github/scripts/test-material-config.py
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-physics
           /tmp/test-physics
