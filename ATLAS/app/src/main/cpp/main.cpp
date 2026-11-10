@@ -11,7 +11,7 @@
 
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
-#include "physics/SurfaceBounce.h"
+#include "physics/SurfaceSlide.h"
 #include "scene/MaterialConfig.h"
 
 namespace
@@ -21,15 +21,17 @@ namespace
     struct EngineState
     {
         VulkanRenderer renderer;
-        atlas::physics::Platform platform{0.0f, -1.0f, 0.0f, 2.0f, 0.1f, 1.0f};
+        atlas::physics::Platform platform{0.0f, -1.0f, 0.0f, 3.0f, 0.1f, 1.0f};
         std::vector<atlas::physics::Box> boxes{
             {-0.6f, 0.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f},
             {-0.6f, 1.0f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f}
         };
         const std::vector<atlas::physics::Box> initialBoxes = boxes;
-        atlas::physics::Box bouncingBox{0.7f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f};
+        atlas::physics::Box bouncingBox{0.4f, 0.4f, 0.0f, 0.3f, 0.3f, 0.3f, 0.0f};
         const atlas::physics::Box initialBouncingBox = bouncingBox;
         atlas::physics::ContactMaterial contact{};
+        atlas::physics::SlideMotion slideMotion{0.7f, 0.0f};
+        float friction = 0.0f;
         size_t bouncingObjectIndex = 0;
         std::vector<size_t> boxObjectIndices;
         bool physicsConfigured = false;
@@ -42,7 +44,7 @@ namespace
 
         float angle = 0.55f;
         float tiltAngle = -0.35f;
-        float cameraDistance = 3.0f;
+        float cameraDistance = 4.0f;
 
         bool touchActive = false;
         int32_t activePointerId = -1;
@@ -142,7 +144,7 @@ namespace
         if (state->boxes.size() != state->boxObjectIndices.size()) return false;
         for (size_t i = 0; i < state->boxes.size(); ++i)
             if (!state->renderer.setObjectY(state->boxObjectIndices[i], state->boxes[i].y)) return false;
-        return state->renderer.setObjectY(state->bouncingObjectIndex, state->bouncingBox.y);
+        return state->renderer.setObjectPosition(state->bouncingObjectIndex, state->bouncingBox.x, state->bouncingBox.y, state->bouncingBox.z);
     }
 
     // Для версии 0.3 при изменении окна пересоздаём весь рендерер.
@@ -160,7 +162,7 @@ namespace
         // Renderer recreation preserves physics; only a new simulation reads the asset.
         if (!state->physicsConfigured &&
             !atlas::loadMaterialConfig(app->activity->assetManager,
-                                       "scenes/physics_materials.txt", state->contact))
+                                       "scenes/physics_materials.txt", state->contact, state->friction))
         {
             logError("ATLAS: ошибка конфигурации материалов; симуляция не запущена.");
             return false;
@@ -439,10 +441,10 @@ namespace
                     state->physicsAccumulator = 0.0;
                     break;
                 }
-                if (!atlas::physics::stepBouncingBox(state->platform, state->bouncingBox,
-                                                      state->contact, 1.0f / 60.0f))
+                if (!atlas::physics::stepSlidingBox(state->platform, state->bouncingBox, state->slideMotion,
+                                                    state->contact, state->friction, 1.0f / 60.0f))
                 {
-                    logError("ATLAS: ошибка отскока; симуляция остановлена.");
+                    logError("ATLAS: ошибка скольжения; симуляция остановлена.");
                     state->physicsRunning = false;
                     state->physicsAccumulator = 0.0;
                     break;

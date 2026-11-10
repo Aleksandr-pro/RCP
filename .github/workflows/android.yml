@@ -25,6 +25,8 @@ jobs:
           /tmp/test-bounce
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-materials.cpp -o /tmp/test-materials
           /tmp/test-materials
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-slide.cpp -o /tmp/test-slide
+          /tmp/test-slide
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -46,7 +48,7 @@ jobs:
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.26e-debug
+          name: ATLAS-0.26f-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:
@@ -86,8 +88,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: 9fc275486a1802328083d0f280378e995843576d
-          path: reference-0.26d
+          ref: 9a8ed8f031f3a303c9c8b385b75e4e9115567f46
+          path: reference-0.26e
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -95,7 +97,7 @@ jobs:
       - name: Install Android SDK components
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "ndk;26.1.10909125" "cmake;3.22.1"'
       - name: Build previous APK
-        working-directory: reference-0.26d/ATLAS
+        working-directory: reference-0.26e/ATLAS
         env:
           ATLAS_TEST_ABI: x86_64
         run: ./gradlew assembleDebug

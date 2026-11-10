@@ -2182,6 +2182,15 @@ bool VulkanRenderer::recordCommandBuffers(
     return true;
 }
 
+bool VulkanRenderer::setObjectPosition(size_t index, float x, float y, float z)
+{
+    if (index >= sceneObjects_.size() || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
+    sceneObjects_[index].x = x;
+    sceneObjects_[index].y = y;
+    sceneObjects_[index].z = z;
+    return true;
+}
+
 bool VulkanRenderer::setObjectY(size_t index, float y)
 {
     if (index >= sceneObjects_.size() || !std::isfinite(y)) return false;

@@ -77,4 +77,57 @@ namespace atlas::physics
         result.restSpeed = 0.20f;
         return true;
     }
+    // Временные тестовые коэффициенты скольжения.
+    // Это настройки прототипа, а не измеренные свойства материалов.
+    inline bool getSlidingFriction(
+        BodyMaterial body,
+        SurfaceMaterial surface,
+        float& result
+    )
+    {
+        float friction = 0.0f;
+
+        switch (body)
+        {
+            case BodyMaterial::TestRubber:
+                switch (surface)
+                {
+                    case SurfaceMaterial::Stone:
+                        friction = 0.60f;
+                        break;
+                    case SurfaceMaterial::Ground:
+                        friction = 0.80f;
+                        break;
+                    case SurfaceMaterial::Sand:
+                        friction = 1.00f;
+                        break;
+                    default:
+                        return false;
+                }
+                break;
+
+            case BodyMaterial::TestWood:
+                switch (surface)
+                {
+                    case SurfaceMaterial::Stone:
+                        friction = 0.35f;
+                        break;
+                    case SurfaceMaterial::Ground:
+                        friction = 0.55f;
+                        break;
+                    case SurfaceMaterial::Sand:
+                        friction = 0.80f;
+                        break;
+                    default:
+                        return false;
+                }
+                break;
+
+            default:
+                return false;
+        }
+
+        result = friction;
+        return true;
+    }
 }

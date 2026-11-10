@@ -6,8 +6,8 @@ package=com.atlas.engine
 adb logcat -G 16M
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
-# Verify the debug signing key and application ID support upgrading from 0.26d.
-adb install -r reference-0.26d/ATLAS/app/build/outputs/apk/debug/app-debug.apk
+# Verify the debug signing key and application ID support upgrading from 0.26e.
+adb install -r reference-0.26e/ATLAS/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n "$package/.AtlasActivity"
 sleep 3
 adb install -r "$RUNNER_TEMP/physics-normal.apk"
@@ -32,7 +32,7 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 4
 adb exec-out screencap -p > physics-diagnostics/normal.png
 adb exec-out screencap -p > physics-diagnostics/resumed.png
-adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_BOUNCE_TEST:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
+adb logcat -d -s ATLAS:I ATLAS_PHYS_TEST:I ATLAS_BOUNCE_TEST:I ATLAS_SLIDE_TEST:I ATLAS_SLIDE_FOCUS:I ATLAS_PROJ_TEST:I '*:S' > physics-diagnostics/physics.log
 python3 - <<'PYCODE' 2> physics-diagnostics/analysis-error.txt || { cat physics-diagnostics/analysis-error.txt; echo "::error::$(tail -n 3 physics-diagnostics/analysis-error.txt | tr '\n' ' ')"; exit 1; }
 from pathlib import Path
 import re
@@ -41,7 +41,12 @@ assert 'Сцена загружена: scenes/physics.atlasscene, объекто
 assert 'Vulkan: рендерер готов' in text
 assert 'Текстура загружена: textures/ornament.rgba' in text
 assert 'Материалы загружены: test_rubber stone, restitution=0.70' in text
-assert text.count('Материалы загружены: test_rubber stone') == 1, 'Material reloaded during renderer recreation'
+frame_pid = re.search(r'\s(\d+)\s+\d+\s+I\s+ATLAS_PHYS_TEST: frame ', text)
+assert frame_pid, 'No frame process id'
+process_id = frame_pid.group(1)
+current_lines = [line for line in text.splitlines() if re.search(rf'\s{process_id}\s+\d+\s+I\s+ATLAS\s*:', line)]
+assert sum('Материалы загружены: test_rubber stone' in line for line in current_lines) == 1, 'Material reloaded during renderer recreation'
+
 samples = [tuple(map(float, x)) for x in re.findall(r'frame y=([-0-9.]+) velocity=([-0-9.]+) rest=([-0-9.]+)', text)]
 assert len(samples) > 15, len(samples)
 rest = samples[0][2]
@@ -59,6 +64,15 @@ impacts = [b[1] for a,b in zip(bounce,bounce[1:]) if a[1] < 0 and b[1] > 0 and a
 assert len(impacts) >= 2 and all(b < a for a,b in zip(impacts,impacts[1:])), f'No diminishing rebounds: {impacts}'
 assert sum(abs(y-rest) < 1e-6 and abs(v) < 1e-6 for y,v in bounce) > 30, 'Bounce did not settle'
 print('Bounce impact speeds:', impacts)
+slide = [tuple(map(float,v)) for v in re.findall(r'ATLAS_SLIDE_TEST: x=([-0-9.]+) y=([-0-9.]+) vx=([-0-9.]+) vy=([-0-9.]+)', text)]
+assert len(slide) > 100 and slide[-1][0] > slide[0][0] + .3
+assert any(vx > .6 for x,y,vx,vy in slide) and sum(abs(vx) < 1e-6 for x,y,vx,vy in slide) > 10
+assert all(x-.3 > -.3 and x+.3 <= 3 for x,y,vx,vy in slide), 'Slide hits stack or leaves platform'
+assert all(b[0] >= a[0] and b[2] <= a[2]+1e-6 for a,b in zip(slide,slide[1:])), 'Slide reversed or accelerated'
+focus_slide = re.findall(r'ATLAS_SLIDE_FOCUS: (lost|gain) x=([-0-9.]+) vx=([-0-9.]+)', text)
+pairs = [(a,b) for a,b in zip(focus_slide,focus_slide[1:]) if a[0]=='lost' and b[0]=='gain']
+assert pairs and all(a[1:] == b[1:] for a,b in pairs), 'Slide changed while paused'
+
 projection = [tuple(map(float,x)) for x in re.findall(r'y=([-0-9.]+) screenY=([-0-9.]+)', '\n'.join(line for line in text.splitlines() if 'ATLAS_PROJ_TEST' in line))]
 assert any(a[0]-b[0] > .15 and b[1] > a[1] for a in projection for b in projection if b[0] < a[0]), 'Falling Y must move down on screen'
 focus = re.findall(r'(lost|gain) y=([-0-9.]+) velocity=([-0-9.]+)', text)

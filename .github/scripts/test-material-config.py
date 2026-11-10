@@ -59,19 +59,20 @@ int main() {
     assert(file);
     AAssetManager asset{std::string((std::istreambuf_iterator<char>(file)), {})};
     ContactMaterial result{.91f,.37f};
-    assert(atlas::loadMaterialConfig(&asset,"file",result));
-    assert(result.restitution == .7f && result.restSpeed == .2f && asset.closed == 1);
+    float friction = 42.0f;
+    assert(atlas::loadMaterialConfig(&asset,"file",result,friction));
+    assert(result.restitution == .7f && result.restSpeed == .2f && friction == .6f && asset.closed == 1);
     asset.content = " \n test_rubber\t sand\n";
-    assert(atlas::loadMaterialConfig(&asset,"file",result) && result.restitution == .1f);
-    auto fail = [&]() { result={.91f,.37f}; int before=asset.closed; assert(!atlas::loadMaterialConfig(&asset,"file",result)); assert(result.restitution==.91f && result.restSpeed==.37f && asset.closed==before+1); };
+    assert(atlas::loadMaterialConfig(&asset,"file",result,friction) && result.restitution == .1f && friction == 1.0f);
+    auto fail = [&]() { result={.91f,.37f}; int before=asset.closed; assert(!atlas::loadMaterialConfig(&asset,"file",result,friction)); assert(result.restitution==.91f && result.restSpeed==.37f && asset.closed==before+1); };
     for (const std::string& bad : {std::string(""),std::string("  \n"),std::string("test_rubber"), std::string("test_rubber sand extra"),std::string("invalid stone"),std::string("test_rubber unknown"),std::string(257,'x'), std::string("test_rubber\0 stone",18)}) { asset.content=bad; fail(); }
     asset.content="test_rubber stone"; asset.shortRead=true; fail(); asset.shortRead=false;
     result={.91f,.37f}; asset.missing=true; int before=asset.closed;
-    assert(!atlas::loadMaterialConfig(&asset,"file",result) && asset.closed==before && result.restitution==.91f);
-    assert(!atlas::loadMaterialConfig(nullptr,"file",result));
-    assert(!atlas::loadMaterialConfig(&asset,nullptr,result));
+    assert(!atlas::loadMaterialConfig(&asset,"file",result,friction) && asset.closed==before && result.restitution==.91f);
+    assert(!atlas::loadMaterialConfig(nullptr,"file",result,friction));
+    assert(!atlas::loadMaterialConfig(&asset,nullptr,result,friction));
     asset.missing=false; asset.content="test_rubber stone"+std::string(256-17,' ');
-    assert(asset.content.size()==256 && atlas::loadMaterialConfig(&asset,"file",result));
+    assert(asset.content.size()==256 && atlas::loadMaterialConfig(&asset,"file",result,friction));
 }
 ''')
     root = Path('ATLAS/app/src/main/cpp/scene').resolve()
