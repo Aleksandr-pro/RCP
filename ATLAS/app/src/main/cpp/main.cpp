@@ -12,6 +12,7 @@
 #include "renderer/VulkanRenderer.h"
 #include "physics/VerticalPhysics.h"
 #include "physics/SurfaceSlide.h"
+#include "physics/TerrainBody.h"
 #include "scene/MaterialConfig.h"
 #include "world/ChunkWorld.h"
 
@@ -25,6 +26,9 @@ namespace
         atlas::world::ChunkWorld world;
         bool worldScene = false;
         bool worldReady = false;
+        atlas::physics::TerrainBody terrainBody{};
+        bool terrainBodyReady = false;
+        bool terrainBodyRunning = false;
         bool worldGesture = false;
         bool consumeGesture = false;
         float worldTouchX = 0.0f, worldTouchY = 0.0f;
@@ -101,12 +105,17 @@ namespace
     bool syncWorldScene(EngineState* state)
     {
         const auto center = state->world.center();
-        if (state->world.active().size() != 9 || state->renderer.sceneObjects().size() != 1 ||
+        if (state->world.active().size() != 9 || state->renderer.sceneObjects().size() != 2 ||
             !state->renderer.updateTerrain(center)) return false;
         constexpr double scale = 0.15;
         const float x = static_cast<float>((double(center.x) * atlas::world::CHUNK_SIZE - state->world.x()) * scale);
         const float z = static_cast<float>((double(center.z) * atlas::world::CHUNK_SIZE - state->world.z()) * scale);
         if (!state->renderer.setObjectPosition(0, x, -0.5f, z)) return false;
+        const auto& body = state->terrainBody;
+        if (!state->renderer.setObjectPosition(1,
+                static_cast<float>((body.x - state->world.x()) * scale),
+                static_cast<float>(body.y * scale - 0.5),
+                static_cast<float>((body.z - state->world.z()) * scale))) return false;
         return true;
     }
 
@@ -227,8 +236,31 @@ namespace
 
             if (state->worldScene)
             {
-                if ((!state->worldReady && !moveObserver(state, 0.0f, 0.0f)) ||
-                    !syncWorldScene(state) ||
+                if (!state->worldReady && !moveObserver(state, 0.0f, 0.0f))
+                {
+                    logError("ATLAS: неверная позиция наблюдателя.");
+                    state->renderer.shutdown();
+                    return false;
+                }
+                if (!state->terrainBodyReady)
+                {
+                    const auto c = state->world.center();
+                    auto& body = state->terrainBody;
+                    body.x = (double(c.x) + 0.5) * atlas::world::CHUNK_SIZE;
+                    body.z = (double(c.z) + 0.5) * atlas::world::CHUNK_SIZE;
+                    double ground = 0.0;
+                    if (!atlas::world::sampleTerrainMeshHeight(body.x, body.z, ground))
+                    {
+                        logError("ATLAS: не удалось определить высоту рельефа.");
+                        state->renderer.shutdown();
+                        return false;
+                    }
+                    body.halfHeight = 0.3;
+                    body.y = ground + body.halfHeight + 2.0;
+                    body.velocityY = 0.0;
+                    state->terrainBodyReady = state->terrainBodyRunning = true;
+                }
+                if (!syncWorldScene(state) ||
                     !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
                 {
                     logError("ATLAS: не удалось создать сцену участков.");
@@ -476,6 +508,23 @@ namespace
         const auto now = std::chrono::steady_clock::now();
         const auto workStartTime = now;
 
+        if (state->worldScene && state->terrainBodyRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
+        {
+            constexpr double fixedStep = 1.0 / 60.0;
+            const double elapsed = std::chrono::duration<double>(now - state->physicsTime).count();
+            state->physicsAccumulator = std::min(state->physicsAccumulator + std::max(elapsed, 0.0), 0.25);
+            while (state->physicsAccumulator + 1e-12 >= fixedStep)
+            {
+                if (!atlas::physics::stepTerrainBody(state->terrainBody, 0.45, 0.20, fixedStep))
+                {
+                    logError("ATLAS: ошибка столкновения с рельефом; симуляция остановлена.");
+                    state->terrainBodyRunning = false;
+                    state->physicsAccumulator = 0.0;
+                    break;
+                }
+                state->physicsAccumulator = state->physicsAccumulator - fixedStep;
+            }
+        }
         if (!state->worldScene && state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
         {
             constexpr double fixedStep = 1.0 / 60.0;
