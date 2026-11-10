@@ -18,3 +18,13 @@ needle = '                        state->lastPinchDistance = distance;'
 assert s.count(needle)==1
 s=s.replace(needle, needle+'\n                        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TERRAIN_GESTURE", "pinch world=%d", state->worldScene);')
 p.write_text(s)
+
+p = Path('ATLAS/app/src/main/cpp/renderer/VulkanRenderer.cpp')
+s = p.read_text()
+needle = '            !uploadTexture(terrainImages_[i], atlas::TERRAIN_TEXTURE_SIZE, atlas::TERRAIN_TEXTURE_SIZE, pixels)) return false;'
+assert s.count(needle) == 1
+s = s.replace(needle, needle + '\n        __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEXTURE_TEST", "create index=%zu", i);')
+needle = '            if (terrainViews_[i]) vkDestroyImageView(device_, terrainViews_[i], nullptr);'
+assert s.count(needle) == 1
+s = s.replace(needle, '            if (terrainImages_[i] && terrainMemories_[i]) __android_log_print(ANDROID_LOG_INFO, "ATLAS_TEXTURE_TEST", "destroy index=%zu", i);\n' + needle)
+p.write_text(s)

@@ -292,8 +292,9 @@ bool VulkanRenderer::initialize(
         !createDevice() ||
         !createSwapchain() ||
         !createDepthResources() ||
-        !createTextureImage() ||
-        !uploadTexture(texturePixels) ||
+        !createTextureImage(textureImage_, textureMemory_, atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT) ||
+        !uploadTexture(textureImage_, atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT, texturePixels) ||
+        !createTerrainTextures(assetManager) ||
         !createRenderPass() ||
         !createTextureDescriptorLayout() ||
         !createTextureDescriptors() ||
@@ -946,7 +947,7 @@ bool VulkanRenderer::createDepthResources()
     return true;
 }
 
-bool VulkanRenderer::createTextureImage()
+bool VulkanRenderer::createTextureImage(VkImage& image, VkDeviceMemory& memory, uint32_t width, uint32_t height)
 {
     constexpr VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 
@@ -969,11 +970,15 @@ bool VulkanRenderer::createTextureImage()
         return false;
     }
 
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
+    if (width == 0 || height == 0 || width > properties.limits.maxImageDimension2D || height > properties.limits.maxImageDimension2D) return false;
+
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = format;
-    imageInfo.extent = {atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT, 1};
+    imageInfo.extent = {width, height, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -989,7 +994,7 @@ bool VulkanRenderer::createTextureImage()
                 device_,
                 &imageInfo,
                 nullptr,
-                &textureImage_
+                &image
             ),
             "vkCreateImage для текстуры"
         ))
@@ -1001,7 +1006,7 @@ bool VulkanRenderer::createTextureImage()
 
     vkGetImageMemoryRequirements(
         device_,
-        textureImage_,
+        image,
         &requirements
     );
 
@@ -1064,7 +1069,7 @@ bool VulkanRenderer::createTextureImage()
                 device_,
                 &allocationInfo,
                 nullptr,
-                &textureMemory_
+                &memory
             ),
             "vkAllocateMemory для текстуры"
         ))
@@ -1075,8 +1080,8 @@ bool VulkanRenderer::createTextureImage()
     if (!checkResult(
             vkBindImageMemory(
                 device_,
-                textureImage_,
-                textureMemory_,
+                image,
+                memory,
                 0
             ),
             "vkBindImageMemory для текстуры"
@@ -1089,13 +1094,13 @@ bool VulkanRenderer::createTextureImage()
     return true;
 }
 
-bool VulkanRenderer::uploadTexture(const std::vector<uint8_t>& pixels)
+bool VulkanRenderer::uploadTexture(VkImage image, uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels)
 {
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
-    if (atlas::ORNAMENT_WIDTH > properties.limits.maxImageDimension2D ||
-        atlas::ORNAMENT_HEIGHT > properties.limits.maxImageDimension2D ||
-        pixels.size() != size_t(atlas::ORNAMENT_WIDTH) * atlas::ORNAMENT_HEIGHT * 4)
+    if (width > properties.limits.maxImageDimension2D ||
+        height > properties.limits.maxImageDimension2D ||
+        pixels.size() != size_t(width) * height * 4)
         return false;
 
     VkBuffer staging = VK_NULL_HANDLE;
@@ -1156,14 +1161,14 @@ bool VulkanRenderer::uploadTexture(const std::vector<uint8_t>& pixels)
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = textureImage_;
+        barrier.image = image;
         barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         VkBufferImageCopy region{};
         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.imageExtent = {atlas::ORNAMENT_WIDTH, atlas::ORNAMENT_HEIGHT, 1};
-        vkCmdCopyBufferToImage(cmd, staging, textureImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        region.imageExtent = {width, height, 1};
+        vkCmdCopyBufferToImage(cmd, staging, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1186,6 +1191,19 @@ bool VulkanRenderer::uploadTexture(const std::vector<uint8_t>& pixels)
     return ok;
 }
 
+bool VulkanRenderer::createTerrainTextures(AAssetManager* manager)
+{
+    constexpr const char* paths[] = {"textures/sand.rgba", "textures/ground.rgba", "textures/stone.rgba"};
+    for (size_t i = 0; i < 3; ++i)
+    {
+        std::vector<uint8_t> pixels;
+        if (!atlas::loadTerrainTexture(manager, paths[i], pixels) ||
+            !createTextureImage(terrainImages_[i], terrainMemories_[i], atlas::TERRAIN_TEXTURE_SIZE, atlas::TERRAIN_TEXTURE_SIZE) ||
+            !uploadTexture(terrainImages_[i], atlas::TERRAIN_TEXTURE_SIZE, atlas::TERRAIN_TEXTURE_SIZE, pixels)) return false;
+    }
+    return true;
+}
+
 bool VulkanRenderer::createTextureDescriptors()
 {
     VkImageViewCreateInfo view{};
@@ -1195,6 +1213,11 @@ bool VulkanRenderer::createTextureDescriptors()
     view.format = VK_FORMAT_R8G8B8A8_UNORM;
     view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     if (!checkResult(vkCreateImageView(device_, &view, nullptr, &textureImageView_), "texture view")) return false;
+    for (size_t i = 0; i < 3; ++i)
+    {
+        view.image = terrainImages_[i];
+        if (!checkResult(vkCreateImageView(device_, &view, nullptr, &terrainViews_[i]), "terrain texture view")) return false;
+    }
     VkSamplerCreateInfo sampler{};
     sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     sampler.magFilter = VK_FILTER_NEAREST;
@@ -1204,7 +1227,7 @@ bool VulkanRenderer::createTextureDescriptors()
     sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     if (!checkResult(vkCreateSampler(device_, &sampler, nullptr, &textureSampler_), "texture sampler")) return false;
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4};
     VkDescriptorPoolCreateInfo pool{};
     pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool.maxSets = 1;
@@ -1217,15 +1240,20 @@ bool VulkanRenderer::createTextureDescriptors()
     allocation.descriptorSetCount = 1;
     allocation.pSetLayouts = &textureDescriptorLayout_;
     if (!checkResult(vkAllocateDescriptorSets(device_, &allocation, &textureDescriptorSet_), "texture descriptor set")) return false;
-    VkDescriptorImageInfo image{textureSampler_, textureImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = textureDescriptorSet_;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &image;
-    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    const VkImageView views[] = {textureImageView_, terrainViews_[0], terrainViews_[1], terrainViews_[2]};
+    VkDescriptorImageInfo images[4]{};
+    VkWriteDescriptorSet writes[4]{};
+    for (uint32_t i = 0; i < 4; ++i)
+    {
+        images[i] = {textureSampler_, views[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = textureDescriptorSet_;
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo = &images[i];
+    }
+    vkUpdateDescriptorSets(device_, 4, writes, 0, nullptr);
     return true;
 }
 
@@ -1416,18 +1444,18 @@ bool VulkanRenderer::loadShaderModule(
 
 bool VulkanRenderer::createTextureDescriptorLayout()
 {
-    VkDescriptorSetLayoutBinding binding{};
-    binding.binding = 0;
-    binding.descriptorType =
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    binding.descriptorCount = 1;
-    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
+    VkDescriptorSetLayoutBinding bindings[4]{};
+    for (uint32_t i = 0; i < 4; ++i)
+    {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
     VkDescriptorSetLayoutCreateInfo info{};
-    info.sType =
-        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    info.bindingCount = 1;
-    info.pBindings = &binding;
+    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    info.bindingCount = 4;
+    info.pBindings = bindings;
 
     if (!checkResult(
             vkCreateDescriptorSetLayout(
@@ -2130,6 +2158,7 @@ bool VulkanRenderer::recordCommandBuffers(
             push.lightDirection[1] = lightY;
             push.lightDirection[2] = s * lightX + c * lightZ;
             push.lightDirection[3] = 0.0f;
+            if (object.meshName == "terrain") push.lightDirection[3] = 1.0f;
 
             vkCmdPushConstants(
                 commandBuffers_[i],
@@ -2444,6 +2473,15 @@ void VulkanRenderer::shutdown()
         {
             vkDestroySampler(device_, textureSampler_, nullptr);
             textureSampler_ = VK_NULL_HANDLE;
+        }
+        for (size_t i = 0; i < 3; ++i)
+        {
+            if (terrainViews_[i]) vkDestroyImageView(device_, terrainViews_[i], nullptr);
+            if (terrainImages_[i]) vkDestroyImage(device_, terrainImages_[i], nullptr);
+            if (terrainMemories_[i]) vkFreeMemory(device_, terrainMemories_[i], nullptr);
+            terrainViews_[i] = VK_NULL_HANDLE;
+            terrainImages_[i] = VK_NULL_HANDLE;
+            terrainMemories_[i] = VK_NULL_HANDLE;
         }
         if (textureImageView_ != VK_NULL_HANDLE)
         {

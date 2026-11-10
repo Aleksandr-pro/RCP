@@ -56,8 +56,9 @@ private:
     bool createDepthResources();
     bool createRenderPass();
     bool createTextureDescriptorLayout();
-    bool createTextureImage();
-    bool uploadTexture(const std::vector<uint8_t>& pixels);
+    bool createTextureImage(VkImage& image, VkDeviceMemory& memory, uint32_t width, uint32_t height);
+    bool uploadTexture(VkImage image, uint32_t width, uint32_t height, const std::vector<uint8_t>& pixels);
+    bool createTerrainTextures(AAssetManager* assetManager);
     bool createTextureDescriptors();
     bool createGraphicsPipeline(AAssetManager* assetManager);
 
@@ -117,6 +118,9 @@ private:
     VkDeviceMemory textureMemory_ = VK_NULL_HANDLE;
     VkImageView textureImageView_ = VK_NULL_HANDLE;
     VkSampler textureSampler_ = VK_NULL_HANDLE;
+    VkImage terrainImages_[3] = {};
+    VkDeviceMemory terrainMemories_[3] = {};
+    VkImageView terrainViews_[3] = {};
     VkDescriptorPool textureDescriptorPool_ = VK_NULL_HANDLE;
     VkDescriptorSet textureDescriptorSet_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;

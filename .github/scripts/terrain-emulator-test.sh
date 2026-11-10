@@ -3,7 +3,7 @@ set -Eeuo pipefail
 mkdir -p terrain-diagnostics
 package=com.atlas.engine
 trap 'adb logcat -d -s ATLAS:I "*:S" > terrain-diagnostics/log.txt || true; tail -80 terrain-diagnostics/log.txt; echo "::error::Terrain test failed at line $LINENO"' ERR
-adb install -r ATLAS/app/build/outputs/apk/debug/app-debug.apk
+adb install -r "$RUNNER_TEMP/terrain-normal.apk"
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 adb shell am force-stop "$package"
@@ -31,7 +31,9 @@ adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
 adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
+adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
+adb shell log -p i -t ATLAS_TERRAIN_MARK move_end
 sleep 7
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-after.txt
 adb exec-out screencap -p > terrain-diagnostics/world-return.png
@@ -41,13 +43,22 @@ adb shell am start -n "$package/.AtlasActivity"
 sleep 6
 adb shell log -p i -t ATLAS_TERRAIN_MARK resumed
 adb shell settings put system user_rotation 1
-sleep 6
-adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
+for attempt in $(seq 1 15); do
+    sleep 2
+    adb exec-out screencap -p > terrain-diagnostics/world-rotated.png
+    if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'; then break; fi
+done
+python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-rotated.png"); assert im.width>im.height'
 adb shell settings put system user_rotation 0
-sleep 5
+for attempt in $(seq 1 15); do
+    sleep 2
+    adb exec-out screencap -p > terrain-diagnostics/world-portrait-again.png
+    if python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'; then break; fi
+done
+python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'
 touch_test switch
 sleep 5
-adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I '*:S' > terrain-diagnostics/log.txt
+adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/log.txt
 grep -q 'материал рельефа x=4.000 z=4.000 surface=stone restitution=0.70' terrain-diagnostics/log.txt
 [ "$(grep -c 'материал рельефа' terrain-diagnostics/log.txt)" -eq 1 ]
 grep -q 'сцена мира' terrain-diagnostics/log.txt
@@ -76,6 +87,22 @@ b=Image.open('terrain-diagnostics/world-rotated.png')
 print(f'::notice title=Terrain screenshots::{a.width}x{a.height} rotated={b.width}x{b.height}')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
+assert 'move_start' in log and 'move_end' in log
+movement=log.split('move_start',1)[1].split('move_end',1)[0]
+assert 'Текстура загружена:' not in movement, 'textures reloaded on chunk transitions'
+for material in ('sand', 'ground', 'stone'):
+    assert ('textures/'+material+'.rgba') in log, 'missing texture load: '+material
+for i in range(3):
+    created=len(re.findall(fr'ATLAS_TEXTURE_TEST.*create index={i}', log))
+    destroyed=len(re.findall(fr'ATLAS_TEXTURE_TEST.*destroy index={i}', log))
+    assert created >= 2 and created-destroyed == 1, (i,created,destroyed)
+print('::notice title=Texture lifecycle::three shared texture resources released on each tested renderer recreation')
+# A compact screenshot is embedded in CI annotations for visual review.
+import base64, io
+shot=Image.open('terrain-diagnostics/world-before.png').convert('RGB')
+shot.thumbnail((100,200))
+out=io.BytesIO(); shot.save(out, format='JPEG', quality=48)
+print('::notice title=Terrain screenshot::'+base64.b64encode(out.getvalue()).decode())
 body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', Path('terrain-diagnostics/body-fall.txt').read_text())]
 print(f'::notice title=Terrain body sample::count={len(body)} minVelocity={min((v for y,v,g,h in body),default=0):.3f} maxVelocity={max((v for y,v,g,h in body),default=0):.3f} final={body[-1] if body else None}')
 assert len(body)>100, f'missing body traces: {len(body)}'
@@ -102,4 +129,47 @@ def pss(name):
     assert m, 'missing PSS'
     return int(m.group(1))
 print('::notice title=Terrain emulator metrics::FPS samples '+', '.join(fps)+'; total PSS before/after movement '+str(pss('before'))+'/'+str(pss('after'))+' kB')
+PYCODE
+
+# Test-only palette demonstrates that the actual GPU shader samples and mixes
+# all three descriptor bindings, independently of photographic texture colors.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/terrain-palette.apk"
+adb shell am start -n "$package/.AtlasActivity"
+sleep 5
+touch_test switch
+sleep 3
+adb shell input swipe 160 400 160 240 400
+sleep 3
+adb exec-out screencap -p > terrain-diagnostics/palette.png
+python3 - <<'PYCODE'
+from PIL import Image
+im=Image.open('terrain-diagnostics/palette.png').convert('RGB')
+colors=list(im.getdata())
+red=sum(1 for r,g,b in colors if r>50 and r>b*3 and r>g*3)
+magenta=sum(1 for r,g,b in colors if r>35 and b>35 and min(r,b)>g*3 and max(r,b)<min(r,b)*2)
+blue=sum(1 for r,g,b in colors if b>50 and b>r*3 and b>g*3)
+print(f'::notice title=GPU material palette::sand={red} ground={magenta} stone={blue} pixels')
+assert min(red,magenta,blue)>10, 'one or more material textures were not visible'
+PYCODE
+
+# An initialization error after two successful uploads must free both images,
+# including allocations created before any descriptor views exist.
+adb shell am force-stop "$package"
+adb install -r "$RUNNER_TEMP/terrain-missing.apk"
+adb logcat -c
+adb shell am start -n "$package/.AtlasActivity"
+sleep 6
+adb logcat -d -s ATLAS:E ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/missing.log
+python3 - <<'PYCODE'
+from pathlib import Path
+import re
+s=Path('terrain-diagnostics/missing.log').read_text()
+assert 'Текстура не найдена: textures/stone.rgba' in s
+for i in (0,1):
+    creates=len(re.findall(fr'ATLAS_TEXTURE_TEST.*create index={i}',s))
+    destroys=len(re.findall(fr'ATLAS_TEXTURE_TEST.*destroy index={i}',s))
+    assert creates>0 and creates==destroys, (i,creates,destroys)
+assert not re.search(r'ATLAS_TEXTURE_TEST.*create index=2',s)
+print('::notice title=Texture error cleanup::missing stone texture: previous sand and ground GPU images released')
 PYCODE

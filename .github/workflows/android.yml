@@ -18,6 +18,7 @@ jobs:
           python3 .github/scripts/test-mesh-loader.py
           python3 .github/scripts/test-scene-loader.py
           python3 .github/scripts/test-texture-loader.py
+          python3 .github/scripts/test-terrain-textures.py
           python3 .github/scripts/test-material-config.py
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-physics.cpp ATLAS/app/src/main/cpp/physics/VerticalPhysics.cpp -o /tmp/test-physics
           /tmp/test-physics
@@ -51,12 +52,12 @@ jobs:
           import zipfile
           from pathlib import Path
           with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
-              for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'scenes/physics.atlasscene', 'scenes/world.atlasscene', 'scenes/physics_materials.txt', 'models/cube.atlasmesh'):
+              for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'textures/sand.rgba', 'textures/ground.rgba', 'textures/stone.rgba', 'scenes/physics.atlasscene', 'scenes/world.atlasscene', 'scenes/physics_materials.txt', 'models/cube.atlasmesh'):
                   assert apk.read('assets/' + name) == Path('ATLAS/app/src/main/assets/' + name).read_bytes(), name
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.27d-debug
+          name: ATLAS-0.27e-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:

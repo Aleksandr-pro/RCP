@@ -19,6 +19,20 @@ jobs:
         run: |
           python3 .github/scripts/instrument-terrain-body.py
           (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/terrain-normal.apk"
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          root=Path('ATLAS/app/src/main/assets/textures')
+          for name, color in [('sand',(255,0,0,255)),('ground',(255,0,255,255)),('stone',(0,0,255,255))]:
+              (root/(name+'.rgba')).write_bytes(bytes(color)*512*512)
+          PYCODE
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/terrain-palette.apk"
+          git checkout -- ATLAS/app/src/main/assets/textures/sand.rgba ATLAS/app/src/main/assets/textures/ground.rgba ATLAS/app/src/main/assets/textures/stone.rgba
+          rm ATLAS/app/src/main/assets/textures/stone.rgba
+          (cd ATLAS && ./gradlew assembleDebug)
+          cp ATLAS/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/terrain-missing.apk"
+          git checkout -- ATLAS/app/src/main/assets/textures/stone.rgba
           mkdir -p "$RUNNER_TEMP/terrain-classes" "$RUNNER_TEMP/terrain-dex"
           javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/terrain-classes" .github/scripts/TerrainInput.java .github/scripts/PinchInput.java
           D8=$(find "$ANDROID_HOME/build-tools" -name d8 -type f | sort -V | tail -n 1)
