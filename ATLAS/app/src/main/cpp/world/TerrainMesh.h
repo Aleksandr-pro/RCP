@@ -2,12 +2,13 @@
 
 #include "ChunkGrid.h"
 #include "TerrainHeight.h"
+#include "TerrainCollision.h"
 #include "../scene/Vertex.h"
 #include <vector>
 
 namespace atlas::world
 {
-    constexpr int TERRAIN_CELLS = 16;
+    constexpr int TERRAIN_CELLS = TERRAIN_CELLS_PER_CHUNK;
     constexpr size_t TERRAIN_VERTICES = 9 * TERRAIN_CELLS * TERRAIN_CELLS * 6;
 
     // Coordinates are relative to the centre chunk; height, normals and UV use world coordinates.

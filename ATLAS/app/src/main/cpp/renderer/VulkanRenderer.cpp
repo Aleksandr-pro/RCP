@@ -1782,7 +1782,7 @@ bool VulkanRenderer::createVertexBuffer(
 
         if (object.meshName == "terrain")
         {
-            if (sceneObjects_.size() != 1 || !atlas::world::buildTerrain({0, 0}, modelVertices)) return false;
+            if (!vertices.empty() || !atlas::world::buildTerrain({0, 0}, modelVertices)) return false;
             terrainBuffer_ = true;
             terrainCenter_ = {0, 0};
         }

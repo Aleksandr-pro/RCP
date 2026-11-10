@@ -33,7 +33,7 @@ adb shell settings put system user_rotation 0
 sleep 5
 touch_test switch
 sleep 5
-adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I '*:S' > terrain-diagnostics/log.txt
+adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I '*:S' > terrain-diagnostics/log.txt
 grep -q 'сцена мира' terrain-diagnostics/log.txt
 grep -q 'физическая сцена' terrain-diagnostics/log.txt
 grep -q 'Участок: x=-1 z=0, активных=9' terrain-diagnostics/log.txt
@@ -59,6 +59,12 @@ a=Image.open('terrain-diagnostics/world-before.png')
 b=Image.open('terrain-diagnostics/world-rotated.png')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
+body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', log)]
+assert len(body)>100, f'missing body traces: {len(body)}'
+assert all(y + 1e-7 >= ground + half for y, velocity, ground, half in body), 'body penetrated at center'
+assert min(v for y,v,g,h in body)<-1 and max(v for y,v,g,h in body)>0.1, 'no fall or rebound'
+assert any(abs(v)<1e-7 and abs(y-g-h)<1e-6 for y,v,g,h in body[-100:]), 'body did not settle'
+print('::notice title=Terrain body test::observed fall, rebound, and rest without penetration at center')
 assert 'ATLAS stats: FPS=' in log.split('resumed',1)[1], 'no frames after resume and rotation'
 fps=re.findall(r'ATLAS stats: FPS=([0-9.]+)', log)
 def pss(name):
