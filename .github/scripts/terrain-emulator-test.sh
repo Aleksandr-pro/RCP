@@ -15,10 +15,16 @@ adb push "$RUNNER_TEMP/terrain.jar" /data/local/tmp/terrain.jar >/dev/null
 read -r width height < <(adb shell wm size | sed -n 's/.*: \([0-9]*\)x\([0-9]*\).*/\1 \2/p' | tail -1 | tr -d '\r')
 touch_test() { adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / TerrainInput "$1" "$width" "$height" "${2:-1}"; }
 touch_test switch
+sleep 0.2
+adb shell input keyevent KEYCODE_HOME
+sleep 2
+adb shell am start -n "$package/.AtlasActivity"
 sleep 8
 adb logcat -d -s ATLAS_TERRAIN_BODY_TEST:I '*:S' > terrain-diagnostics/body-fall.txt
 adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
+adb shell input swipe 70 350 150 350 300
+adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
 touch_test move 5
 sleep 7
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-after.txt
@@ -35,7 +41,7 @@ adb shell settings put system user_rotation 0
 sleep 5
 touch_test switch
 sleep 5
-adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I '*:S' > terrain-diagnostics/log.txt
+adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I '*:S' > terrain-diagnostics/log.txt
 grep -q 'сцена мира' terrain-diagnostics/log.txt
 grep -q 'физическая сцена' terrain-diagnostics/log.txt
 grep -q 'Участок: x=-1 z=0, активных=9' terrain-diagnostics/log.txt
@@ -68,6 +74,14 @@ assert all(y + 1e-7 >= ground + half for y, velocity, ground, half in body), 'bo
 assert min(v for y,v,g,h in body)<-1 and max(v for y,v,g,h in body)>0.1, 'no fall or rebound'
 assert any(abs(v)<1e-7 and abs(y-g-h)<1e-6 for y,v,g,h in body[-100:]), 'body did not settle'
 print('::notice title=Terrain body test::observed fall, rebound, and rest without penetration at center')
+assert 'orbit world=1' in log and 'pinch world=1' in log, 'world camera gestures not detected'
+focus=re.findall(r'(lost|gain) world=1 y=(-?[0-9.]+) velocity=(-?[0-9.]+)',log)
+assert len(focus)>=2, f'missing world focus events: {focus}'
+for i,(event,y,v) in enumerate(focus[:-1]):
+    if event=='lost' and focus[i+1][0]=='gain' and abs(float(v)) > 0.001:
+        assert abs(float(y)-float(focus[i+1][1])) < 1e-8 and abs(float(v)-float(focus[i+1][2])) < 1e-8, 'body changed while paused'
+        break
+else: raise AssertionError('no pause while body moving')
 assert 'ATLAS stats: FPS=' in log.split('resumed',1)[1], 'no frames after resume and rotation'
 fps=re.findall(r'ATLAS stats: FPS=([0-9.]+)', log)
 def pss(name):

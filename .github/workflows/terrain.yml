@@ -20,9 +20,9 @@ jobs:
           python3 .github/scripts/instrument-terrain-body.py
           (cd ATLAS && ./gradlew assembleDebug)
           mkdir -p "$RUNNER_TEMP/terrain-classes" "$RUNNER_TEMP/terrain-dex"
-          javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/terrain-classes" .github/scripts/TerrainInput.java
+          javac -source 8 -target 8 -classpath "$ANDROID_HOME/platforms/android-34/android.jar" -d "$RUNNER_TEMP/terrain-classes" .github/scripts/TerrainInput.java .github/scripts/PinchInput.java
           D8=$(find "$ANDROID_HOME/build-tools" -name d8 -type f | sort -V | tail -n 1)
-          "$D8" --min-api 26 --output "$RUNNER_TEMP/terrain-dex" "$RUNNER_TEMP/terrain-classes/TerrainInput.class"
+          "$D8" --min-api 26 --output "$RUNNER_TEMP/terrain-dex" "$RUNNER_TEMP/terrain-classes/TerrainInput.class" "$RUNNER_TEMP/terrain-classes/PinchInput.class"
           (cd "$RUNNER_TEMP/terrain-dex" && jar cf "$RUNNER_TEMP/terrain.jar" classes.dex)
       - name: Enable KVM and install image library
         run: |
