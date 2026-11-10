@@ -33,13 +33,19 @@ adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
 sleep 2
 adb exec-out screencap -p > terrain-diagnostics/grass-close.png
+# Half a screen-width is a half-turn. Restore the original view after the screenshot.
+adb shell input swipe $((width/4)) $((height/2)) $((width*3/4)) $((height/2)) 400
+sleep 2
+adb exec-out screencap -p > terrain-diagnostics/grass-reverse.png
+adb shell input swipe $((width*3/4)) $((height/2)) $((width/4)) $((height/2)) 400
 python3 - <<'PYCODE'
 from PIL import Image
-im=Image.open('terrain-diagnostics/grass-close.png').convert('RGB')
-# Production shader output is an unlit muted green gradient.
-pixels=sum(1 for r,g,b in im.getdata() if 16<=r<=42 and 58<=g<=103 and 12<=b<=28 and g>r*2.2 and g>b*2.8)
-print(f'::notice title=Grass rasterization::green grass-colored pixels={pixels}')
-assert pixels>3, 'no visible grass-colored fragments in close view'
+for name in ('grass-close', 'grass-reverse'):
+    im=Image.open('terrain-diagnostics/'+name+'.png').convert('RGB')
+    # Production shader output is an unlit muted green gradient.
+    pixels=sum(1 for r,g,b in im.getdata() if 16<=r<=42 and 58<=g<=103 and 12<=b<=28 and g>r*2.2 and g>b*2.8)
+    print(f'::notice title=Grass {name} rasterization::green grass-colored pixels={pixels}')
+    assert pixels>3, f'no visible grass-colored fragments: {name}'
 PYCODE
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
