@@ -15,6 +15,7 @@ read -r width height < <(adb shell wm size | sed -n 's/.*: \([0-9]*\)x\([0-9]*\)
 touch_test() { adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / TerrainInput "$1" "$width" "$height" "${2:-1}"; }
 touch_test switch
 sleep 8
+adb logcat -d -s ATLAS_TERRAIN_BODY_TEST:I '*:S' > terrain-diagnostics/body-fall.txt
 adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
 touch_test move 5
@@ -59,7 +60,8 @@ a=Image.open('terrain-diagnostics/world-before.png')
 b=Image.open('terrain-diagnostics/world-rotated.png')
 assert (a.width<a.height) and (b.width>b.height), 'rotation did not take effect'
 log=Path('terrain-diagnostics/log.txt').read_text()
-body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', log)]
+body=[tuple(map(float,m)) for m in re.findall(r'y=(-?[0-9.]+) velocity=(-?[0-9.]+) ground=(-?[0-9.]+) half=(-?[0-9.]+)', Path('terrain-diagnostics/body-fall.txt').read_text())]
+print(f'::notice title=Terrain body sample::count={len(body)} minVelocity={min((v for y,v,g,h in body),default=0):.3f} maxVelocity={max((v for y,v,g,h in body),default=0):.3f} final={body[-1] if body else None}')
 assert len(body)>100, f'missing body traces: {len(body)}'
 assert all(y + 1e-7 >= ground + half for y, velocity, ground, half in body), 'body penetrated at center'
 assert min(v for y,v,g,h in body)<-1 and max(v for y,v,g,h in body)>0.1, 'no fall or rebound'
