@@ -31,6 +31,16 @@ adb exec-out screencap -p > terrain-diagnostics/world-before.png
 adb shell dumpsys meminfo "$package" > terrain-diagnostics/memory-before.txt
 adb shell input swipe 70 350 150 350 300
 adb shell CLASSPATH=/data/local/tmp/terrain.jar app_process / PinchInput out "$width" "$height"
+sleep 2
+adb exec-out screencap -p > terrain-diagnostics/grass-close.png
+python3 - <<'PYCODE'
+from PIL import Image
+im=Image.open('terrain-diagnostics/grass-close.png').convert('RGB')
+# Production shader output is unlit green; tolerate small color conversion differences.
+pixels=sum(1 for r,g,b in im.getdata() if 29<=r<=33 and 115<=g<=120 and 24<=b<=28)
+print(f'::notice title=Grass rasterization::green grass-colored pixels={pixels}')
+assert pixels>3, 'no visible grass-colored fragments in close view'
+PYCODE
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_start
 touch_test move 5
 adb shell log -p i -t ATLAS_TERRAIN_MARK move_end
