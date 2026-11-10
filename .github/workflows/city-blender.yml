@@ -1,0 +1,31 @@
+name: City Blender source preview
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender
+        run: sudo apt-get update && sudo apt-get install -y blender
+      - name: Build and render supplied scene
+        run: |
+          mkdir -p city-output
+          set -o pipefail
+          if ! blender -b --threads 2 --python-exit-code 77 \
+            --python ATLAS/city-source/city_blender.py \
+            --python-expr "import bpy; print('ATLAS_CITY_COUNTS meshes=%d lights=%d' % (sum(o.type == 'MESH' for o in bpy.context.scene.objects), sum(o.type == 'LIGHT' for o in bpy.context.scene.objects))); bpy.ops.wm.save_as_mainfile(filepath='$GITHUB_WORKSPACE/city-output/city.blend'); bpy.context.scene.cycles.use_denoising=False; print('CI preview only: Blender package lacks OpenImageDenoise; rendering without denoiser')" \
+            -o "$GITHUB_WORKSPACE/city-output/city" -F PNG -f 1 2>&1 | tee "$RUNNER_TEMP/blender.log"; then
+            tail -8 "$RUNNER_TEMP/blender.log" | while IFS= read -r line; do echo "::error::$line"; done
+            cp "$RUNNER_TEMP/blender.log" city-output/blender.log
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ATLAS-city-blender-source-preview
+          path: city-output/
+          if-no-files-found: warn
+          retention-days: 30
