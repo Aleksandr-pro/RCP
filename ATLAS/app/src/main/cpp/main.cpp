@@ -15,6 +15,7 @@
 #include "physics/TerrainBody.h"
 #include "scene/MaterialConfig.h"
 #include "world/ChunkWorld.h"
+#include "world/TerrainMaterial.h"
 
 namespace
 {
@@ -29,6 +30,7 @@ namespace
         atlas::physics::TerrainBody terrainBody{};
         bool terrainBodyReady = false;
         bool terrainBodyRunning = false;
+        atlas::physics::ContactMaterial terrainContact{};
         bool worldGesture = false;
         bool consumeGesture = false;
         float worldTouchX = 0.0f, worldTouchY = 0.0f;
@@ -255,6 +257,33 @@ namespace
                         state->renderer.shutdown();
                         return false;
                     }
+                    atlas::physics::SurfaceMaterial surface{};
+                    if (!atlas::world::sampleTerrainMaterial(body.x, body.z, surface))
+                    {
+                        logError("ATLAS: не удалось определить физический материал рельефа.");
+                        state->renderer.shutdown();
+                        return false;
+                    }
+                    if (!atlas::physics::getContactMaterial(atlas::physics::BodyMaterial::TestRubber, surface, state->terrainContact))
+                    {
+                        logError("ATLAS: неизвестная пара физических материалов рельефа.");
+                        state->renderer.shutdown();
+                        return false;
+                    }
+                    const char* surfaceName = nullptr;
+                    switch (surface)
+                    {
+                        case atlas::physics::SurfaceMaterial::Sand: surfaceName = "sand"; break;
+                        case atlas::physics::SurfaceMaterial::Ground: surfaceName = "ground"; break;
+                        case atlas::physics::SurfaceMaterial::Stone: surfaceName = "stone"; break;
+                        default:
+                            logError("ATLAS: неизвестное название материала рельефа.");
+                            state->renderer.shutdown();
+                            return false;
+                    }
+                    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+                        "ATLAS: материал рельефа x=%.3f z=%.3f surface=%s restitution=%.2f",
+                        body.x, body.z, surfaceName, state->terrainContact.restitution);
                     body.halfHeight = 0.3;
                     body.y = ground + body.halfHeight + 2.0;
                     body.velocityY = 0.0;
@@ -515,7 +544,7 @@ namespace
             state->physicsAccumulator = std::min(state->physicsAccumulator + std::max(elapsed, 0.0), 0.25);
             while (state->physicsAccumulator + 1e-12 >= fixedStep)
             {
-                if (!atlas::physics::stepTerrainBody(state->terrainBody, 0.45, 0.20, fixedStep))
+                if (!atlas::physics::stepTerrainBody(state->terrainBody, state->terrainContact.restitution, state->terrainContact.restSpeed, fixedStep))
                 {
                     logError("ATLAS: ошибка столкновения с рельефом; симуляция остановлена.");
                     state->terrainBodyRunning = false;

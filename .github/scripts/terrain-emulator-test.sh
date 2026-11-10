@@ -48,6 +48,8 @@ sleep 5
 touch_test switch
 sleep 5
 adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I '*:S' > terrain-diagnostics/log.txt
+grep -q 'материал рельефа x=4.000 z=4.000 surface=stone restitution=0.70' terrain-diagnostics/log.txt
+[ "$(grep -c 'материал рельефа' terrain-diagnostics/log.txt)" -eq 1 ]
 grep -q 'сцена мира' terrain-diagnostics/log.txt
 grep -q 'физическая сцена' terrain-diagnostics/log.txt
 grep -q 'Участок: x=-1 z=0, активных=9' terrain-diagnostics/log.txt

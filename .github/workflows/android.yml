@@ -33,6 +33,8 @@ jobs:
           /tmp/test-terrain
           g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-terrain-body.cpp -o /tmp/test-terrain-body
           /tmp/test-terrain-body
+          g++ -std=c++17 -Wall -Wextra -Werror .github/tests/test-terrain-material.cpp -o /tmp/test-terrain-material
+          /tmp/test-terrain-material
       - name: Verify SPIR-V
         run: |
           GLSLC="$ANDROID_HOME/ndk/26.1.10909125/shader-tools/linux-x86_64/glslc"
@@ -54,7 +56,7 @@ jobs:
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.27c-debug
+          name: ATLAS-0.27d-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:
