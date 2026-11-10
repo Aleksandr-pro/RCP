@@ -36,8 +36,8 @@ adb exec-out screencap -p > terrain-diagnostics/grass-close.png
 python3 - <<'PYCODE'
 from PIL import Image
 im=Image.open('terrain-diagnostics/grass-close.png').convert('RGB')
-# Production shader output is unlit green; tolerate small color conversion differences.
-pixels=sum(1 for r,g,b in im.getdata() if 29<=r<=33 and 115<=g<=120 and 24<=b<=28)
+# Production shader output is an unlit muted green gradient.
+pixels=sum(1 for r,g,b in im.getdata() if 16<=r<=42 and 58<=g<=103 and 12<=b<=28 and g>r*2.2 and g>b*2.8)
 print(f'::notice title=Grass rasterization::green grass-colored pixels={pixels}')
 assert pixels>3, 'no visible grass-colored fragments in close view'
 PYCODE

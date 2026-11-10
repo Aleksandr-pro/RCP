@@ -33,6 +33,7 @@ done
 python3 - <<'PYCODE'
 from pathlib import Path
 import re
+static_counts={}
 for mode in ('baseline','stones'):
     text=Path(f'stones-comparison/{mode}.log').read_text()
     assert 'measure_static' in text and 'move_end' in text
@@ -45,6 +46,10 @@ for mode in ('baseline','stones'):
         m=re.search(r'TOTAL PSS:\s*(\d+)',t) or re.search(r'^\s*TOTAL\s+(\d+)',t,re.M)
         assert m; return m.group(1)
     print(f'::notice title={mode} memory::PSS before/after={pss("before")}/{pss("after")} kB')
+    static_text=text.split('measure_static',1)[1].split('measure_move',1)[0]
+    static_grass=[tuple(map(int,x)) for x in re.findall(r'трава записей=(\d+) видимых=(\d+) draw calls мира=(\d+)',static_text)]
+    assert static_grass, (mode, 'missing stationary grass counts')
+    static_counts[mode]=static_grass[-1]
     if mode=='stones':
         counts=[tuple(map(int,x)) for x in re.findall(r'камешков=(\d+) базовых draw calls мира=(\d+)',text)]
         assert len(counts)>=10 and all(n<=144 and d==n+2 for n,d in counts),counts
@@ -53,4 +58,6 @@ for mode in ('baseline','stones'):
         assert grass and all(n<=324 and v<=n and d>=v+2 for n,v,d in grass), grass
         assert any(v>0 for n,v,d in grass), grass
         print(f'::notice title=Grass visibility and total draw calls::{grass}')
+assert static_counts['baseline']==static_counts['stones'], static_counts
+print(f"::notice title=Matched camera draw counts::{static_counts}")
 PYCODE
