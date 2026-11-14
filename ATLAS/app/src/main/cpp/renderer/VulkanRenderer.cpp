@@ -279,6 +279,7 @@ bool VulkanRenderer::initialize(
         return false;
     }
 
+    cityScene_ = scenePath != nullptr && std::strcmp(scenePath, "scenes/city.atlasscene") == 0;
     std::vector<uint8_t> texturePixels;
     if (!atlas::loadOrnamentTexture(assetManager, "textures/ornament.rgba", texturePixels))
         return false;
@@ -2078,9 +2079,9 @@ bool VulkanRenderer::recordCommandBuffers(
         VkClearValue clearValues[2]{};
 
         // Цвет фона.
-        clearValues[0].color.float32[0] = 0.02f;
-        clearValues[0].color.float32[1] = 0.22f;
-        clearValues[0].color.float32[2] = 0.12f;
+        clearValues[0].color.float32[0] = cityScene_ ? 0.07f : 0.02f;
+        clearValues[0].color.float32[1] = cityScene_ ? 0.09f : 0.22f;
+        clearValues[0].color.float32[2] = cityScene_ ? 0.15f : 0.12f;
         clearValues[0].color.float32[3] = 1.0f;
 
         // Самая дальняя глубина в диапазоне Vulkan.
@@ -2179,6 +2180,7 @@ bool VulkanRenderer::recordCommandBuffers(
             if (object.meshName == "terrain") push.lightDirection[3] = 1.0f;
             else if (object.meshName == "stone") push.lightDirection[3] = 2.0f;
             else if (object.meshName == "grass") push.lightDirection[3] = 3.0f;
+            else if (cityScene_) push.lightDirection[3] = 4.0f;
 
             vkCmdPushConstants(
                 commandBuffers_[i],
@@ -2472,6 +2474,7 @@ void VulkanRenderer::shutdown()
     initialized_ = false;
     swapchainOutOfDate_ = false;
     terrainBuffer_ = false;
+    cityScene_ = false;
     stones_.clear();
     grass_.clear();
     visibleGrassCount_ = 0;

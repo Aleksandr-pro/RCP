@@ -92,6 +92,7 @@ private:
 
     atlas::world::ChunkCoord terrainCenter_{};
     bool terrainBuffer_ = false;
+    bool cityScene_ = false;
     std::vector<atlas::world::StonePlacement> stones_;
     std::vector<atlas::world::GrassPlacement> grass_;
     size_t visibleGrassCount_ = 0;

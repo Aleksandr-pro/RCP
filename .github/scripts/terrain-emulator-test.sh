@@ -75,6 +75,8 @@ for attempt in $(seq 1 30); do
 done
 python3 -c 'from PIL import Image; im=Image.open("terrain-diagnostics/world-portrait-again.png"); assert im.width<im.height'
 touch_test switch
+sleep 3
+touch_test switch
 sleep 5
 adb logcat -d -s ATLAS:I ATLAS_TERRAIN_MARK:I ATLAS_TERRAIN_BODY_TEST:I ATLAS_TERRAIN_FOCUS:I ATLAS_TERRAIN_GESTURE:I ATLAS_TEXTURE_TEST:I '*:S' > terrain-diagnostics/log.txt
 grep -q 'материал рельефа x=4.000 z=4.000 surface=stone restitution=0.70' terrain-diagnostics/log.txt

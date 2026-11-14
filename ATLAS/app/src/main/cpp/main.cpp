@@ -26,6 +26,7 @@ namespace
         VulkanRenderer renderer;
         atlas::world::ChunkWorld world;
         bool worldScene = false;
+        bool cityScene = false;
         bool worldReady = false;
         atlas::physics::TerrainBody terrainBody{};
         bool terrainBodyReady = false;
@@ -60,6 +61,10 @@ namespace
         float cameraDistance = 4.0f;
         // Preserve the other scene's zoom when switching between physics and world.
         float otherSceneCameraDistance = 4.0f;
+        float worldSceneCameraDistance = 4.0f;
+        float citySceneCameraDistance = 8.5f;
+        float savedSceneAngle = 0.55f, savedSceneTilt = -0.35f;
+        float cityAngle = 2.42f, cityTilt = -0.50f;
 
         bool touchActive = false;
         int32_t activePointerId = -1;
@@ -210,7 +215,7 @@ namespace
         }
 
         // Renderer recreation preserves physics; only a new simulation reads the asset.
-        if (!state->worldScene && !state->physicsConfigured &&
+        if (!state->worldScene && !state->cityScene && !state->physicsConfigured &&
             !atlas::loadMaterialConfig(app->activity->assetManager,
                                        "scenes/physics_materials.txt", state->contact, state->friction))
         {
@@ -235,7 +240,8 @@ namespace
             if (!state->renderer.initialize(
                     app->window,
                     app->activity->assetManager,
-                    state->worldScene ? "scenes/world.atlasscene" : "scenes/physics.atlasscene"
+                    state->worldScene ? "scenes/world.atlasscene" :
+                        (state->cityScene ? "scenes/city.atlasscene" : "scenes/physics.atlasscene")
                 ))
             {
                 logError("ATLAS: ошибка запуска Vulkan-рендерера.");
@@ -299,6 +305,15 @@ namespace
                     !state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
                 {
                     logError("ATLAS: не удалось создать сцену участков.");
+                    state->renderer.shutdown();
+                    return false;
+                }
+            }
+            else if (state->cityScene)
+            {
+                if (!state->renderer.updateRotation(state->angle, state->tiltAngle, state->cameraDistance))
+                {
+                    logError("ATLAS: не удалось создать городскую сцену.");
                     state->renderer.shutdown();
                     return false;
                 }
@@ -567,7 +582,7 @@ namespace
                 state->physicsAccumulator = state->physicsAccumulator - fixedStep;
             }
         }
-        if (!state->worldScene && state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
+        if (!state->worldScene && !state->cityScene && state->physicsRunning && state->physicsTime != std::chrono::steady_clock::time_point{})
         {
             constexpr double fixedStep = 1.0 / 60.0;
             const double elapsed = std::chrono::duration<double>(now - state->physicsTime).count();
@@ -593,7 +608,7 @@ namespace
             }
         }
         state->physicsTime = now;
-        if (state->worldScene ? !syncWorldScene(state) : !syncPhysicsScene(state))
+        if (!state->cityScene && (state->worldScene ? !syncWorldScene(state) : !syncPhysicsScene(state)))
         {
             logError("ATLAS: не удалось обновить положения кубов.");
             state->renderer.shutdown();
@@ -661,14 +676,39 @@ namespace
         // Four fingers switch scenes. Suppress remaining pointers until all are lifted.
         if (!state->consumeGesture && pointerCount >= 4 && actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN)
         {
-            state->worldScene = !state->worldScene;
-            std::swap(state->cameraDistance, state->otherSceneCameraDistance);
+            if (!state->worldScene && !state->cityScene)
+            {
+                state->worldScene = true;
+                std::swap(state->cameraDistance, state->otherSceneCameraDistance);
+            }
+            else if (state->worldScene)
+            {
+                state->worldSceneCameraDistance = state->cameraDistance;
+                state->cameraDistance = state->citySceneCameraDistance;
+                state->savedSceneAngle = state->angle;
+                state->savedSceneTilt = state->tiltAngle;
+                state->angle = state->cityAngle;
+                state->tiltAngle = state->cityTilt;
+                state->worldScene = false;
+                state->cityScene = true;
+            }
+            else
+            {
+                state->citySceneCameraDistance = state->cameraDistance;
+                state->cityAngle = state->angle;
+                state->cityTilt = state->tiltAngle;
+                state->angle = state->savedSceneAngle;
+                state->tiltAngle = state->savedSceneTilt;
+                state->cityScene = false;
+                state->cameraDistance = state->otherSceneCameraDistance;
+                state->otherSceneCameraDistance = state->worldSceneCameraDistance;
+            }
             state->worldGesture = false;
             state->consumeGesture = true;
             state->touchActive = state->pinchActive = false;
             state->physicsTime = {};
             state->physicsAccumulator = 0.0;
-            logInfo(state->worldScene ? "ATLAS: сцена мира." : "ATLAS: физическая сцена.");
+            logInfo(state->worldScene ? "ATLAS: сцена мира." : (state->cityScene ? "ATLAS: городская сцена." : "ATLAS: физическая сцена."));
             restartRenderer(app, state);
             return 1;
         }

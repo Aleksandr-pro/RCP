@@ -56,6 +56,11 @@ int main() {
     assert(loadScene(&asset, "physics", objects) && objects.size() == 4);
     assert(objects[0].scale == 6.0f && objects[0].scaleY == 0.2f && objects[0].scaleZ == 2.0f);
     assert(objects[1].scaleY == 0.6f);
+    std::ifstream cityFile("ATLAS/app/src/main/assets/scenes/city.atlasscene");
+    assert(cityFile);
+    asset.content = std::string((std::istreambuf_iterator<char>(cityFile)), {});
+    assert(loadScene(&asset, "city", objects) && objects.size() == 9);
+    for (const auto& object: objects) assert(object.meshName.rfind("city_",0)==0 && object.scale==0.08f);
     asset.content = "ATLAS_SCENE_V2\ncube 0 0 0 2 0 2 0\n";
     assert(!loadScene(&asset, "bad v2", objects) && objects.empty());
     asset.content = scene;

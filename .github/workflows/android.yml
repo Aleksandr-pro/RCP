@@ -58,10 +58,12 @@ jobs:
           with zipfile.ZipFile('ATLAS/app/build/outputs/apk/debug/app-debug.apk') as apk:
               for name in ('shaders/triangle.vert.spv', 'shaders/triangle.frag.spv', 'textures/ornament.rgba', 'textures/sand.rgba', 'textures/ground.rgba', 'textures/stone.rgba', 'scenes/physics.atlasscene', 'scenes/world.atlasscene', 'scenes/physics_materials.txt', 'models/cube.atlasmesh', 'models/stone.atlasmesh', 'models/grass.atlasmesh'):
                   assert apk.read('assets/' + name) == Path('ATLAS/app/src/main/assets/' + name).read_bytes(), name
+              for name in ['scenes/city.atlasscene'] + [f'models/city_{i:03d}.atlasmesh' for i in range(9)]:
+                  assert apk.read('assets/' + name) == Path('ATLAS/app/src/main/assets/' + name).read_bytes(), name
           PYCODE
       - uses: actions/upload-artifact@v4
         with:
-          name: ATLAS-0.27i-debug
+          name: ATLAS-0.28a-debug
           path: ATLAS/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
   signed-apk:

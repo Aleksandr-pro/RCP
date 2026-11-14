@@ -1,0 +1,32 @@
+{
+  "parts": [
+    "city_000",
+    "city_001",
+    "city_002",
+    "city_003",
+    "city_004",
+    "city_005",
+    "city_006",
+    "city_007",
+    "city_008"
+  ],
+  "triangles": 24500,
+  "skipped_degenerate": 0,
+  "material_triangles": {
+    "Asphalt": 12,
+    "Sidewalk concrete": 432,
+    "Curb": 3216,
+    "Road paint": 528,
+    "Grey plaster": 216,
+    "Dark metal": 3112,
+    "Warm interior windows": 1788,
+    "Dark windows": 4500,
+    "Warm plaster": 432,
+    "Muted blue": 216,
+    "Tree bark": 896,
+    "Leaves dark": 3520,
+    "Leaves light": 3200,
+    "Leaves medium": 2240,
+    "Street lamp glow": 192
+  }
+}
