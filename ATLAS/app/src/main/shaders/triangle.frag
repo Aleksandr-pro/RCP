@@ -5,6 +5,7 @@ layout(location = 1) in vec2 vertexUV;
 layout(location = 2) in float terrainHeight;
 layout(location = 3) flat in float isTerrain;
 layout(location = 4) in vec2 worldXZ;
+layout(location = 5) in vec3 vertexColor;
 layout(set = 0, binding = 0) uniform sampler2D imageTexture;
 layout(set = 0, binding = 1) uniform sampler2D sandTexture;
 layout(set = 0, binding = 2) uniform sampler2D groundTexture;
@@ -31,6 +32,15 @@ vec3 variedTexture(sampler2D tex, vec2 worldXZ, float variation)
 void main()
 {
     vec3 surfaceColor;
+    if (isTerrain > 3.5)
+    {
+        // Basic warm ambient + directional lighting, not Blender Cycles or dynamic lamps.
+        // The original warm window and lamp colors remain bright, without casting light.
+        bool luminous = vertexColor.r > 0.99 && vertexColor.g > 0.5 && vertexColor.b < 0.4;
+        float lighting = luminous ? 1.0 : 0.55 + 0.45 * vertexBrightness;
+        outColor = vec4(vertexColor * lighting * vec3(1.0, 0.90, 0.80), 1.0);
+        return;
+    }
     if (isTerrain > 2.5)
     {
         // For the unit-height grass mesh terrainHeight carries local vertex Y.

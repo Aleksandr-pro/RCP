@@ -90,6 +90,15 @@ int main() {
     asset.content = std::string((std::istreambuf_iterator<char>(cubeFile)), {});
     assert(loadMesh(&asset, "cube", vertices) && vertices.size() == 36);
     checkNormals(vertices);
+    size_t cityVertices = 0;
+    for (int i=0; i<9; ++i) {
+        const std::string path = "ATLAS/app/src/main/assets/models/city_00" + std::to_string(i) + ".atlasmesh";
+        std::ifstream cityFile(path); assert(cityFile);
+        asset.content = std::string((std::istreambuf_iterator<char>(cityFile)), {});
+        assert(loadMesh(&asset, "city", vertices) && !vertices.empty());
+        cityVertices += vertices.size();
+    }
+    assert(cityVertices == 24500 * 3);
     asset.content = model;
     assert(!loadMesh(nullptr, "pyramid", vertices) && vertices.empty());
     assert(!loadMesh(&asset, nullptr, vertices));
