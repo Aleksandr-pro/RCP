@@ -42,7 +42,7 @@ s=Path('city-diagnostics/log.txt').read_text()
 assert 'городская сцена' in s and 'сцена мира' in s and 'физическая сцена' in s
 v=[(int(w),int(c),float(d),float(a),float(t)) for w,c,d,a,t in re.findall(r'scene world=(\d+) city=(\d+) distance=([\d.]+) angle=([-\d.]+) tilt=([-\d.]+)',s)]
 assert [(w,c) for w,c,*_ in v]==[(1,0),(0,1),(0,0),(1,0),(0,1)],v
-assert abs(v[1][2]-8.5)<1e-5 and abs(v[2][2]-4)<1e-5,v
+assert abs(v[1][2]-5.3)<1e-5 and abs(v[2][2]-4)<1e-5,v
 assert v[3][2]<v[0][2] and v[4][2]<v[1][2],v
 assert abs(v[4][3]-v[1][3])>1.0, v
 assert 'уникальных моделей: 9, всего вершин: 73500' in s

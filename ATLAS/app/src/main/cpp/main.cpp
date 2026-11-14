@@ -62,7 +62,7 @@ namespace
         // Preserve the other scene's zoom when switching between physics and world.
         float otherSceneCameraDistance = 4.0f;
         float worldSceneCameraDistance = 4.0f;
-        float citySceneCameraDistance = 8.5f;
+        float citySceneCameraDistance = 5.3f;
         float savedSceneAngle = 0.55f, savedSceneTilt = -0.35f;
         float cityAngle = 2.42f, cityTilt = -0.50f;
 

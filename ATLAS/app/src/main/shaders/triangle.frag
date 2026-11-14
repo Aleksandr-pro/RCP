@@ -34,8 +34,11 @@ void main()
     vec3 surfaceColor;
     if (isTerrain > 3.5)
     {
-        // Basic warm directional lighting, not Blender Cycles or dynamic lamps.
-        outColor = vec4(vertexColor * vertexBrightness * vec3(1.0, 0.85, 0.72), 1.0);
+        // Basic warm ambient + directional lighting, not Blender Cycles or dynamic lamps.
+        // The original warm window and lamp colors remain bright, without casting light.
+        bool luminous = vertexColor.r > 0.99 && vertexColor.g > 0.5 && vertexColor.b < 0.4;
+        float lighting = luminous ? 1.0 : 0.55 + 0.45 * vertexBrightness;
+        outColor = vec4(vertexColor * lighting * vec3(1.0, 0.90, 0.80), 1.0);
         return;
     }
     if (isTerrain > 2.5)

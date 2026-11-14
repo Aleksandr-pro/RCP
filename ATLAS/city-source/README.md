@@ -11,6 +11,11 @@ headless Blender process, saves `city.blend`, and renders a 1600x1200 PNG using
 the requested 128 Cycles samples. Ubuntu Blender lacks OpenImageDenoise, so
 only the CI PNG preview is rendered without denoising; the saved `.blend`
 retains the requested setting. Download the artifact from that workflow run.
-Blender/Cycles settings, procedural nodes, lights and camera do not automatically
-work in the current mobile Vulkan renderer; bringing the scene into the engine
-requires an explicit export and mobile rendering implementation.
+`export_atlas.py` evaluates Blender geometry (including bevel modifiers), converts
+Z-up Blender coordinates to Y-up ATLAS coordinates and writes up to 9000 vertices
+per mesh. The resulting nine static batches contain 24500 triangles and are used
+by `scenes/city.atlasscene`. Material base colors are copied to vertices. The
+runtime uses simplified warm directional/ambient lighting; bright windows and
+lamps do not cast light. Cycles shadows, material nodes, roughness, bump mapping,
+point lights and the orthographic camera are not reproduced in the mobile renderer.
+The scene is decorative and has no physics or navigation.
