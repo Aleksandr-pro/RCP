@@ -2,8 +2,6 @@ name: City Blender source preview
 on:
   push:
     paths: ["ATLAS/city-source/city_blender.py", ".github/workflows/city-blender.yml"]
-  pull_request:
-    paths: ["ATLAS/city-source/city_blender.py", ".github/workflows/city-blender.yml"]
   workflow_dispatch:
 permissions:
   contents: read

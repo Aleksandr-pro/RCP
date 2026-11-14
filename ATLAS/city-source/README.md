@@ -4,7 +4,7 @@
 Python (formatting compacted; object construction, random calls, parameters,
 lighting and render settings retained). It deletes the current Blender scene;
 run only on a new/empty project. The seed is 27. It creates a full Cycles scene;
-it is **not yet** an ATLAS runtime asset.
+the separately exported geometry is used as an ATLAS runtime asset.
 
 The `City Blender source preview` GitHub workflow runs the script in a fresh
 headless Blender process, saves `city.blend`, and renders a 1600x1200 PNG using
