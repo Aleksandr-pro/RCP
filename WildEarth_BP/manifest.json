@@ -4,14 +4,14 @@
     "name": "Дикая Земля",
     "description": "Реалистичные природные детали для обычного мира",
     "uuid": "f251e33a-246c-45ae-b825-7f0ab1338256",
-    "version": [0, 1, 0],
+    "version": [0, 2, 0],
     "min_engine_version": [1, 21, 0]
   },
   "modules": [
     {
       "type": "data",
       "uuid": "cb297642-12ce-43ba-90da-e32b37eb282b",
-      "version": [0, 1, 0]
+      "version": [0, 2, 0]
     }
   ]
 }
