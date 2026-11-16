@@ -3,7 +3,7 @@
   "minecraft:feature_rules": {
     "description": {
       "identifier": "wildearth:mossy_stone_taiga",
-      "places_feature": "wildearth:mossy_stone"
+      "places_feature": "wildearth:mossy_stone_cluster"
     },
     "conditions": {
       "placement_pass": "surface_pass",
