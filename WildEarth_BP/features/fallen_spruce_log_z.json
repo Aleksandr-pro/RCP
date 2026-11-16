@@ -1,0 +1,19 @@
+{
+  "format_version": "1.13.0",
+  "minecraft:single_block_feature": {
+    "description": {
+      "identifier": "wildearth:fallen_spruce_log_z"
+    },
+    "places_block": {
+      "name": "minecraft:spruce_log",
+      "states": {
+        "pillar_axis": "z"
+      }
+    },
+    "enforce_placement_rules": false,
+    "enforce_survivability_rules": false,
+    "may_replace": [
+      "minecraft:air"
+    ]
+  }
+}

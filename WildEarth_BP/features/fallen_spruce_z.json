@@ -1,0 +1,16 @@
+{
+  "format_version": "1.13.0",
+  "minecraft:scatter_feature": {
+    "description": {
+      "identifier": "wildearth:fallen_spruce_z"
+    },
+    "places_feature": "wildearth:fallen_spruce_log_z",
+    "iterations": 8,
+    "x": 0,
+    "y": 0,
+    "z": {
+      "distribution": "uniform",
+      "extent": [0, 3]
+    }
+  }
+}
