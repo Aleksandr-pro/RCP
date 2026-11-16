@@ -5,17 +5,21 @@
       "identifier": "wildearth:mossy_stone_cluster"
     },
     "places_feature": "wildearth:mossy_stone",
-    "distribution": {
-      "iterations": 8,
-      "x": {
-        "distribution": "uniform",
-        "extent": [-1, 1]
-      },
-      "y": 0,
-      "z": {
-        "distribution": "uniform",
-        "extent": [-1, 1]
-      }
+    "iterations": 8,
+    "x": {
+      "distribution": "uniform",
+      "extent": [
+        -1,
+        1
+      ]
+    },
+    "y": 0,
+    "z": {
+      "distribution": "uniform",
+      "extent": [
+        -1,
+        1
+      ]
     }
   }
 }
